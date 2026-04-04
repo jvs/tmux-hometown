@@ -203,6 +203,9 @@ func (m Model) handlePromptKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
+		if m.currentWindow() == nil {
+			return m.handleEnterEmpty()
+		}
 		return m, tea.Quit
 
 	case "esc", "alt+u":
@@ -348,6 +351,41 @@ func (m Model) handleModalDone(msg ModalDoneMsg) (Model, tea.Cmd) {
 		return m.handleDelete()
 	}
 	return m, nil
+}
+
+func (m Model) handleEnterEmpty() (Model, tea.Cmd) {
+	laneKey := m.currentLane()
+	name := "Window " + laneDisplayNames[laneKey]
+
+	var targetID string
+	position := "a"
+	if len(m.windows) > 0 {
+		targetID = m.windows[len(m.windows)-1].ID
+	} else {
+		targetID = m.session.ID
+		position = "b"
+	}
+
+	if m.commandFile != "" {
+		content := fmt.Sprintf(
+			"NEWWIN=$(tmux new-window -%s -t '%s' -n '%s' -c '#{pane_current_path}' -P -F '#{window_id}')\n"+
+				"tmux set-window-option -t \"$NEWWIN\" @lane '%s'\n"+
+				"tmux select-window -t \"$NEWWIN\"\n",
+			position, targetID, name, laneKey)
+		os.WriteFile(m.commandFile, []byte(content), 0644)
+		return m, tea.Quit
+	}
+
+	out, err := exec.Command("tmux", "new-window",
+		"-"+position, "-t", targetID,
+		"-n", name, "-c", "#{pane_current_path}",
+		"-P", "-F", "#{window_id}").Output()
+	if err == nil {
+		newWinID := strings.TrimSpace(string(out))
+		tmuxRun("set-window-option", "-t", newWinID, "@lane", laneKey)
+		tmuxRun("select-window", "-t", newWinID)
+	}
+	return m, tea.Quit
 }
 
 func (m Model) handleAdd(name string) (Model, tea.Cmd) {
