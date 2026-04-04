@@ -26,15 +26,28 @@ Sessions are assigned to one of the same five slots — **H**, **J**, **K**, **L
 | `kill-window` | Kill the current window (with tmux confirmation prompt) |
 | `kill-session` | Kill the current session (with tmux confirmation prompt) |
 
+### History navigation
+
+tmux-hometown tracks the last visit time of each window. The history commands navigate that ordering without recording new visits themselves.
+
+| Command | Description |
+|---------|-------------|
+| `previous-window-in-current-session` | Go to the most recently visited other window in this session |
+| `next-window-in-current-session` | Go forward in this session's window history |
+| `previous-window-in-any-session` | Go to the most recently visited other window across all sessions |
+| `next-window-in-any-session` | Go forward in the global window history |
+| `previous-session` | Go to the most recently visited window in a different session |
+| `next-session` | Go forward to the next session in history |
+
 ### Popups
 
 | Command | Description |
 |---------|-------------|
 | `show-windows` | Open (or close) the windows popup |
 | `show-sessions` | Open (or close) the sessions popup |
-| `show-all` | Open (or close) the all-sessions-and-windows popup |
+| `show-all` | Open (or close) the Hometown Sessions popup |
 
-Both popups toggle: running the command while the popup is open closes it.
+All three popups toggle: running the command while the popup is open closes it.
 
 ## show-windows
 
@@ -71,7 +84,7 @@ Moving the cursor live-switches the active window so you can preview as you navi
 | `x` / `c` | Cut the selected window |
 | `p` / `P` | Paste the cut window after / before the selected window |
 | `m` | Remove the selected window from its lane (unassign) |
-| `Enter` | Confirm and close |
+| `Enter` | Confirm and close; create a window if the lane is empty |
 | `Esc` | Cancel and return to the original window |
 | `u` / `U` | Switch to show-sessions |
 
@@ -96,7 +109,7 @@ Assign a key to window "my-window"?  [H] [J] [K] [L] [;]  [s]kip  [n]ever
 │                                                                             │
 │  H           J           K           L           ;                          │
 │  ─────────────────────────────────────────────────────────────────────────  │
-│  work        personal    server                                             │
+│  work        personal    server      -           -                          │
 │              side-proj                                                      │
 │                                                                             │
 │           [a]dd   [r]ename   [d]elete   [c]ut   [p]aste   re[m]ove          │
@@ -123,7 +136,7 @@ Moving the cursor live-switches the active session.
 | `x` / `c` | Cut the selected session |
 | `p` | Paste the cut session into the current slot |
 | `m` | Remove the selected session from its slot (unassign) |
-| `Enter` | Confirm and close |
+| `Enter` | Confirm and close; create a session if the slot is empty |
 | `Esc` | Cancel and return to the original session |
 | `u` / `U` / `shift+enter` | Switch to show-windows |
 
@@ -142,6 +155,51 @@ Assign a key to session "my-session"?  [H] [J] [K] [L] [;]  [s]kip  [n]ever
 - Pick a slot key to assign and proceed to the grid
 - `s` — skip for now (prompt appears again next time)
 - `n` — never prompt for this session again
+
+## show-all (Hometown Sessions)
+
+```
+╭─ Hometown Sessions ─────────────────────────────────────────────────────────╮
+│                                                                             │
+│      Session           H           J           K           L           ;    │
+│  ─────────────────────────────────────────────────────────────────────────  │
+│  H   work              editor      server      git         claude      sc   │
+│  J   personal          code        -           -           -           -    │
+│  K   -                 -           -           -           -           -    │
+│  L   -                 -           -           -           -           -    │
+│  ;   -                 -           -           -           -           -    │
+│                                                                             │
+│           [a]dd   [r]ename   [d]elete   [c]ut   [p]aste   re[m]ove          │
+╰─────────────────────────────────────────────────────────────────────────────╯
+```
+
+One row per session slot. Each window column shows the first window in that lane for the slot's session. The current row is shown in full brightness; other rows are dimmed. Moving the cursor live-switches to the selected session and window.
+
+A `-` marks an empty cell. Pressing `Enter` on a `-` in the window columns creates the session and window in one step.
+
+### Navigation
+
+| Key | Action |
+|-----|--------|
+| `h` / `j` / `k` / `l` / `;` | Jump to that window column |
+| `H` / `J` / `K` / `L` / `:` | Jump to that session row |
+| `↑` / `↓` | Move up / down one row |
+| `←` / `→` | Move left / right one column |
+
+### Actions
+
+When the cursor is in the **Session** column, actions operate on the session. Otherwise they operate on the window.
+
+| Key | Action |
+|-----|--------|
+| `a` | Add a new session (Session col) or window (window col) |
+| `r` | Rename the selected session or window |
+| `d` | Kill the selected session or window (with confirmation) |
+| `x` / `c` | Cut the selected session or window |
+| `p` | Paste the cut item into the current slot or lane |
+| `m` | Remove the selected session from its slot, or window from its lane |
+| `Enter` | Switch to the selected session/window and close; create if empty |
+| `Esc` | Cancel and return to the original window |
 
 ## Install
 
