@@ -683,7 +683,7 @@ func (m AllModel) renderRow(rowIdx int, row allRow) string {
 	}
 	var sessCell string
 	if row.sess == nil {
-		sessCell = sessBase.Foreground(emptyFg).Render("(empty)")
+		sessCell = sessBase.Foreground(emptyFg).Render("-")
 	} else {
 		name := row.sess.Name
 		if row.sess.ID == m.cutSessID {
@@ -713,7 +713,7 @@ func (m AllModel) renderRow(rowIdx int, row allRow) string {
 			if inWinCur {
 				dotStyle = dotStyle.Background(lipgloss.Color("237"))
 			}
-			sb.WriteString(dotStyle.Render("."))
+			sb.WriteString(dotStyle.Render("-"))
 		}
 	} else {
 		for i, laneKey := range laneOrder {
@@ -729,7 +729,7 @@ func (m AllModel) renderRow(rowIdx int, row allRow) string {
 
 			win, hasWin := row.windows[laneKey]
 			if !hasWin {
-				sb.WriteString(winBase.Foreground(emptyFg).Render("(empty)"))
+				sb.WriteString(winBase.Foreground(emptyFg).Render("-"))
 				continue
 			}
 			if win.ID == m.cutWinID {

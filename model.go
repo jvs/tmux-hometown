@@ -787,7 +787,7 @@ func (m Model) renderWindowLines(laneIdx int, key string, colWidth int) []string
 		} else {
 			s = plain.Foreground(lipgloss.Color("243"))
 		}
-		return []string{s.Render("(empty)")}
+		return []string{s.Render("-")}
 	}
 
 	const cutLabel = " (cut)"

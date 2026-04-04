@@ -650,7 +650,7 @@ func (m StoresModel) renderSessionLines(laneIdx int, key string, colWidth int) [
 		} else {
 			s = plain.Foreground(lipgloss.Color("243"))
 		}
-		return []string{s.Render("(empty)")}
+		return []string{s.Render("-")}
 	}
 
 	const cutLabel = " (cut)"
