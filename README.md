@@ -149,7 +149,7 @@ Assign a key to session "my-session"?  [H] [J] [K] [L] [;]  [s]kip  [n]ever
 go install github.com/jvs/tmux-hometown@latest
 ```
 
-**Binary download (no Go required):**
+**Binary download (Go not required):**
 
 ```bash
 # macOS (Apple Silicon)
