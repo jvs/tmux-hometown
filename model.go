@@ -70,6 +70,10 @@ type Model struct {
 	// Window to restore on cancel
 	initialWinID string
 
+	// Non-empty when the last window of the session was just deleted.
+	// Replaces the normal grid with a one-line notice; Enter opens show-sessions.
+	deletedSessionName string
+
 	width  int
 	height int
 }
@@ -138,6 +142,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.promptMode {
 			return m.handlePromptKey(msg)
+		}
+		if m.deletedSessionName != "" {
+			return m.handleDeletedNoticeKey(msg)
 		}
 		return m.handleKey(msg)
 	}
@@ -458,15 +465,61 @@ func (m Model) handleDelete() (Model, tea.Cmd) {
 	nextID := m.findNextWindow(winID, laneKey)
 	if nextID != "" {
 		tmuxRun("switch-client", "-t", m.session.ID+":"+nextID)
+		tmuxRun("kill-window", "-t", winID)
+		m.refresh()
+		m.positionOnWindow(nextID)
+		return m, nil
 	}
 
-	tmuxRun("kill-window", "-t", winID)
-	m.refresh()
+	// Last window in this session — killing it will kill the session too.
+	// Switch the client away first so the popup survives, then show a notice.
+	sessName := m.session.Name
+	all, _ := listAllSessions()
+	if len(all) <= 1 {
+		// Only session: killing it exits tmux entirely.
+		tmuxRun("kill-window", "-t", winID)
+		return m, tea.Quit
+	}
 
-	if nextID != "" {
-		m.positionOnWindow(nextID)
+	fallbackID := findFallbackSessionID(m.session.ID, all)
+	tmuxRun("switch-client", "-t", fallbackID)
+	tmuxRun("kill-window", "-t", winID)
+	m.deletedSessionName = sessName
+	return m, nil
+}
+
+func (m Model) handleDeletedNoticeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		if m.commandFile != "" {
+			exe, _ := os.Executable()
+			os.WriteFile(m.commandFile, []byte(exe+" show-sessions\n"), 0644)
+		}
+		return m, tea.Quit
+	case "esc":
+		return m, tea.Quit
 	}
 	return m, nil
+}
+
+func findFallbackSessionID(currentSessID string, all []Session) string {
+	// Prefer the most-recently-used session.
+	out, err := exec.Command("tmux", "display-message", "-p", "#{client_last_session}").Output()
+	if err == nil {
+		prevName := strings.TrimSpace(string(out))
+		for _, s := range all {
+			if s.ID != currentSessID && s.Name == prevName {
+				return s.ID
+			}
+		}
+	}
+	// Fall back to any other session.
+	for _, s := range all {
+		if s.ID != currentSessID {
+			return s.ID
+		}
+	}
+	return ""
 }
 
 func (m Model) handlePaste(before bool) (Model, tea.Cmd) {
@@ -582,9 +635,19 @@ func (m Model) viewPrompt() string {
 	return strings.Repeat("\n", m.height/2-1) + centered
 }
 
+func (m Model) viewDeletedNotice() string {
+	msg := fmt.Sprintf("Deleted session %q", m.deletedSessionName)
+	hint := hintStyle.Render("[enter]")
+	centered := lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(msg + "  " + hint)
+	return strings.Repeat("\n", m.height/2-1) + centered
+}
+
 func (m Model) View() string {
 	if m.promptMode {
 		return m.viewPrompt()
+	}
+	if m.deletedSessionName != "" {
+		return m.viewDeletedNotice()
 	}
 
 	pad := strings.Repeat(" ", m.jColumnOffset())
