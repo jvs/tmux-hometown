@@ -31,7 +31,7 @@ const (
 
 var (
 	allHeaderRuleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
-	allVertSepStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	allRowRuleStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("236"))
 )
 
 // ── Data types ────────────────────────────────────────────────────────────────
@@ -109,6 +109,14 @@ func newAllModel(initialSessID, initialWinID, commandFile string) AllModel {
 	for i, row := range m.rows {
 		if row.sess != nil && row.sess.ID == initialSessID {
 			m.curRow = i
+			// Position on the column matching the current window's lane.
+			curLane := getCurrentLane()
+			for laneIdx, laneKey := range laneOrder {
+				if laneKey == curLane {
+					m.curCol = laneIdx + 1
+					break
+				}
+			}
 			break
 		}
 	}
@@ -552,14 +560,14 @@ func (m *AllModel) refresh() {
 // winColWidth returns the width of each window lane column.
 func (m AllModel) winColWidth() int {
 	const gaps = 4 * 2 // 4 inter-column gaps of 2 spaces each
-	available := m.width - 2*allSidePad - allKeyColW - 1 - allSessColW - 3 - gaps
+	available := m.width - 2*allSidePad - allKeyColW - 1 - allSessColW - 2 - gaps
 	return max(6, available/5)
 }
 
 // totalWidth returns the full content width (excluding side padding).
 func (m AllModel) totalWidth() int {
 	w := m.winColWidth()
-	return allKeyColW + 1 + allSessColW + 3 + 5*w + 4*2
+	return allKeyColW + 1 + allSessColW + 2 + 5*w + 4*2
 }
 
 // ── View ──────────────────────────────────────────────────────────────────────
@@ -574,7 +582,7 @@ func (m AllModel) View() string {
 	lines = append(lines, pad+allHeaderRuleStyle.Render(strings.Repeat("─", tw)))
 	for i, row := range m.rows {
 		if i > 0 {
-			lines = append(lines, pad+guideStyle.Render(strings.Repeat("─", tw)))
+			lines = append(lines, pad+allRowRuleStyle.Render(strings.Repeat("─", tw)))
 		}
 		lines = append(lines, pad+m.renderRow(i, row))
 	}
@@ -590,15 +598,14 @@ func (m AllModel) View() string {
 
 func (m AllModel) renderHeader() string {
 	w := m.winColWidth()
-	keyHead := lipgloss.NewStyle().Width(allKeyColW).
-		Foreground(lipgloss.Color("246")).Render("Key")
+	keyHead := lipgloss.NewStyle().Width(allKeyColW).Render("")
 	sessHead := lipgloss.NewStyle().Width(allSessColW).Render("Session")
 
 	var sb strings.Builder
 	sb.WriteString(keyHead)
 	sb.WriteString(" ")
 	sb.WriteString(sessHead)
-	sb.WriteString(allVertSepStyle.Render(" │ "))
+	sb.WriteString("  ")
 	for i, laneKey := range laneOrder {
 		if i > 0 {
 			sb.WriteString("  ")
@@ -612,20 +619,32 @@ func (m AllModel) renderRow(rowIdx int, row allRow) string {
 	w := m.winColWidth()
 	isCurRow := rowIdx == m.curRow
 
+	// Non-current rows use a darker foreground throughout.
+	var fg lipgloss.Color
+	if isCurRow {
+		fg = lipgloss.Color("")
+	} else {
+		fg = lipgloss.Color("243")
+	}
+	emptyFg := lipgloss.Color("240")
+	if isCurRow {
+		emptyFg = lipgloss.Color("243")
+	}
+
 	// Key cell.
 	keyCell := lipgloss.NewStyle().Width(allKeyColW).
-		Foreground(lipgloss.Color("246")).
+		Foreground(fg).
 		Render(storeDisplayNames[row.storeKey])
 
 	// Session cell.
 	inSessCur := isCurRow && m.curCol == allColSession
-	sessBase := lipgloss.NewStyle().Width(allSessColW)
+	sessBase := lipgloss.NewStyle().Width(allSessColW).Foreground(fg)
 	if inSessCur {
 		sessBase = sessBase.Background(lipgloss.Color("237"))
 	}
 	var sessCell string
 	if row.sess == nil {
-		sessCell = sessBase.Foreground(lipgloss.Color("243")).Render("(empty)")
+		sessCell = sessBase.Foreground(emptyFg).Render("(empty)")
 	} else {
 		name := row.sess.Name
 		if row.sess.ID == m.cutSessID {
@@ -641,7 +660,7 @@ func (m AllModel) renderRow(rowIdx int, row allRow) string {
 	sb.WriteString(keyCell)
 	sb.WriteString(" ")
 	sb.WriteString(sessCell)
-	sb.WriteString(allVertSepStyle.Render(" │ "))
+	sb.WriteString("  ")
 
 	// Window cells.
 	if row.sess == nil {
@@ -653,14 +672,14 @@ func (m AllModel) renderRow(rowIdx int, row allRow) string {
 			}
 			colIdx := i + 1
 			inWinCur := isCurRow && m.curCol == colIdx
-			winBase := lipgloss.NewStyle().Width(w)
+			winBase := lipgloss.NewStyle().Width(w).Foreground(fg)
 			if inWinCur {
 				winBase = winBase.Background(lipgloss.Color("237"))
 			}
 
 			win, hasWin := row.windows[laneKey]
 			if !hasWin {
-				sb.WriteString(winBase.Foreground(lipgloss.Color("243")).Render("(empty)"))
+				sb.WriteString(winBase.Foreground(emptyFg).Render("(empty)"))
 				continue
 			}
 			if win.ID == m.cutWinID {
