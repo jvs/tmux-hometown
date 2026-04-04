@@ -38,9 +38,10 @@ type StoresModel struct {
 	returnView    string
 	switchView    string
 
-	// Session to restore on cancel
+	// Session to restore on cancel; its store key is used to patch @prev_store on confirm.
 	initialSessID   string
 	initialSessName string
+	initialStoreKey string
 
 	width  int
 	height int
@@ -60,6 +61,7 @@ func newStoresModel(initialSessID, commandFile, returnView, switchView string) (
 		switchView:      switchView,
 		initialSessID:   initialSessID,
 		initialSessName: sess.Name,
+		initialStoreKey: getSessionStoreKey(initialSessID),
 		width:           80,
 		height:          24,
 	}
@@ -170,6 +172,10 @@ func (m StoresModel) handlePromptKey(msg tea.KeyMsg) (StoresModel, tea.Cmd) {
 func (m StoresModel) handleKey(msg tea.KeyMsg) (StoresModel, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
+		if m.currentSession() == nil {
+			return m.handleEnterEmpty()
+		}
+		m.fixPrevStore()
 		return m, tea.Quit
 
 	case "esc", "alt+U":
@@ -179,6 +185,7 @@ func (m StoresModel) handleKey(msg tea.KeyMsg) (StoresModel, tea.Cmd) {
 		return m, tea.Quit
 
 	case "alt+u", "u", "U", "shift+enter":
+		m.fixPrevStore()
 		if m.commandFile != "" {
 			exe, _ := os.Executable()
 			os.WriteFile(m.commandFile, []byte(exe+" show-windows\n"), 0644)
@@ -262,6 +269,7 @@ func (m StoresModel) handleKey(msg tea.KeyMsg) (StoresModel, tea.Cmd) {
 	// Shift+key: switch to that store and show its lanes.
 	if laneIdx, ok := laneKeyLane[msg.String()]; ok && laneKeyShift[msg.String()] {
 		storeKey := storeKeys[laneIdx]
+		m.fixPrevStore()
 		if m.commandFile != "" {
 			exe, _ := os.Executable()
 			content := exe + " switch-session-and-show-lanes " + storeKey + "\n"
@@ -353,6 +361,30 @@ func (m StoresModel) handleAdd(name string) (StoresModel, tea.Cmd) {
 	setSessionStoreKey(newSessID, key)
 	m.refresh()
 	return m, nil
+}
+
+func (m StoresModel) handleEnterEmpty() (StoresModel, tea.Cmd) {
+	key := storeKeys[m.colLane]
+
+	if m.commandFile != "" {
+		name := "Session " + storeSessionNames[key]
+		content := fmt.Sprintf(
+			"NEWSESS=$(tmux new-session -d -s '%s' -P -F '#{session_id}' 2>/dev/null || tmux new-session -d -P -F '#{session_id}')\n"+
+				"tmux set-option -t \"$NEWSESS\" @hometown_store_key %s\n"+
+				"tmux set-window-option -t \"$NEWSESS\" @lane j\n"+
+				"tmux switch-client -t \"$NEWSESS\"\n",
+			name, key)
+		os.WriteFile(m.commandFile, []byte(content), 0644)
+		return m, tea.Quit
+	}
+
+	newSessID, err := newStoreSession(key)
+	if err != nil {
+		return m, nil
+	}
+	setSessionStoreKey(newSessID, key)
+	tmuxRun("switch-client", "-t", newSessID)
+	return m, tea.Quit
 }
 
 func (m StoresModel) handleRename(name string) (StoresModel, tea.Cmd) {
@@ -462,6 +494,20 @@ func (m StoresModel) switchToCurrentCmd() tea.Cmd {
 		tmuxRun("switch-client", "-t", sessID)
 		return nil
 	}
+}
+
+// fixPrevStore writes @hometown_prev_store with the store key of the session
+// the user was in when they opened the popup, undoing any pollution from
+// live-preview switches.
+func (m StoresModel) fixPrevStore() {
+	if m.initialStoreKey == "" {
+		return
+	}
+	// Only write it when the confirmed destination is a different slot.
+	if s := m.currentSession(); s != nil && getSessionStoreKey(s.ID) == m.initialStoreKey {
+		return
+	}
+	tmuxSetGlobalOption("@hometown_prev_store", m.initialStoreKey)
 }
 
 func (m *StoresModel) refresh() {

@@ -253,9 +253,15 @@ func cmdSwitchLane(key string) error {
 	}
 
 	currentLane := getCurrentLane()
+	currentLaneIsDefault := tmuxGetCurrentWindowOption("@lane") == ""
 
 	// Save current window for the current lane before doing anything.
 	tmuxSetSessionOption(sessID, "@lane_"+currentLane+"_window", curWinID)
+
+	// If the current window has no @lane set, assign it now.
+	if currentLaneIsDefault {
+		tmuxRun("set-window-option", "-t", curWinID, "@lane", currentLane)
+	}
 
 	if key == currentLane {
 		// Already in this lane — cycle to next window.

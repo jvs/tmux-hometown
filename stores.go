@@ -12,6 +12,12 @@ var storeDisplayNames = map[string]string{
 	"h": "H", "j": "J", "k": "K", "l": "L", "semi": ";",
 }
 
+// storeSessionNames maps store keys to the name used when auto-creating a
+// session for that slot. ";" becomes "SC" to keep the name shell-friendly.
+var storeSessionNames = map[string]string{
+	"h": "H", "j": "J", "k": "K", "l": "L", "semi": "SC",
+}
+
 // getSessionStoreKey returns the store key assigned to a session, or "".
 func getSessionStoreKey(sessID string) string {
 	return tmuxGetSessionOption(sessID, "@hometown_store_key")
@@ -76,9 +82,10 @@ func clearStoreForSession(sessID string) error {
 }
 
 // newStoreSession creates a new detached session for a store key, naming it
-// "Session <DisplayName>" if that name is not already taken.
+// "Session <X>" (where X comes from storeSessionNames) if that name is not
+// already taken. The session's initial window is tagged with @lane "j".
 func newStoreSession(key string) (string, error) {
-	name := "Session " + storeDisplayNames[key]
+	name := "Session " + storeSessionNames[key]
 	out, err := exec.Command("tmux", "new-session", "-d", "-s", name, "-P", "-F", "#{session_id}").Output()
 	if err != nil {
 		// Name already taken — create without a specific name.
@@ -87,7 +94,17 @@ func newStoreSession(key string) (string, error) {
 			return "", err
 		}
 	}
-	return strings.TrimSpace(string(out)), nil
+	sessID := strings.TrimSpace(string(out))
+	// Tag the initial window as lane "j" and record it as that lane's window.
+	winOut, err := exec.Command("tmux", "list-windows", "-t", sessID, "-F", "#{window_id}").Output()
+	if err == nil {
+		winID := strings.TrimSpace(string(winOut))
+		if winID != "" {
+			exec.Command("tmux", "set-window-option", "-t", winID, "@lane", "j").Run()
+			exec.Command("tmux", "set-option", "-t", sessID, "@lane_j_window", winID).Run()
+		}
+	}
+	return sessID, nil
 }
 
 // laneKeyToUserKey converts an internal lane/store key to the user-facing character.
@@ -100,7 +117,8 @@ func laneKeyToUserKey(key string) string {
 
 // parseStoreKey normalizes a user-provided key character to an internal key name.
 func parseStoreKey(s string) (string, error) {
-	if s == ";" {
+	switch strings.ToLower(s) {
+	case ";", "semi", "semicolon", "sc":
 		return "semi", nil
 	}
 	for _, k := range storeKeys {
