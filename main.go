@@ -19,9 +19,12 @@ func main() {
 
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "Usage: hometown <command> [args]")
-		fmt.Fprintln(os.Stderr, "Commands: switch-window, switch-session, previous-lane, previous-store,")
+		fmt.Fprintln(os.Stderr, "Commands: switch-window, switch-session, flip-window, flip-session,")
 		fmt.Fprintln(os.Stderr, "          show-windows, show-sessions,")
-		fmt.Fprintln(os.Stderr, "          new-window, kill-window")
+		fmt.Fprintln(os.Stderr, "          new-window, kill-window,")
+		fmt.Fprintln(os.Stderr, "          previous-session, next-session,")
+		fmt.Fprintln(os.Stderr, "          previous-window-in-current-session, next-window-in-current-session,")
+		fmt.Fprintln(os.Stderr, "          previous-window-in-any-session, next-window-in-any-session")
 		os.Exit(1)
 	}
 
@@ -53,13 +56,13 @@ func main() {
 			die("%v", err)
 		}
 
-	case "previous-lane":
-		if err := cmdPreviousLane(); err != nil {
+	case "flip-window":
+		if err := cmdFlipWindow(); err != nil {
 			die("%v", err)
 		}
 
-	case "previous-store":
-		if err := cmdPreviousStore(); err != nil {
+	case "flip-session":
+		if err := cmdFlipSession(); err != nil {
 			die("%v", err)
 		}
 
@@ -106,6 +109,44 @@ func main() {
 		if err := cmdTagNewWindow(); err != nil {
 			die("%v", err)
 		}
+
+	case "previous-session":
+		if err := cmdPreviousSession(); err != nil {
+			die("%v", err)
+		}
+
+	case "next-session":
+		if err := cmdNextSession(); err != nil {
+			die("%v", err)
+		}
+
+	case "previous-window-in-current-session":
+		if err := cmdPreviousWindowInCurrentSession(); err != nil {
+			die("%v", err)
+		}
+
+	case "next-window-in-current-session":
+		if err := cmdNextWindowInCurrentSession(); err != nil {
+			die("%v", err)
+		}
+
+	case "previous-window-in-any-session":
+		if err := cmdPreviousWindowInAnySession(); err != nil {
+			die("%v", err)
+		}
+
+	case "next-window-in-any-session":
+		if err := cmdNextWindowInAnySession(); err != nil {
+			die("%v", err)
+		}
+
+	// Internal: stamp a window with the current visit time. Used by deferred
+	// shell scripts (commandFile) that create windows outside the Go process.
+	case "record-window-visit":
+		if len(args) < 1 {
+			die("record-window-visit requires a window ID")
+		}
+		recordWindowVisit(args[0])
 
 	default:
 		die("unknown command: %s", cmd)
@@ -235,6 +276,14 @@ func calcLanesHeight(sessID string) int {
 		}
 	}
 	h := maxPerLane + 7
+	for _, w := range windows {
+		if w.Lane == "" {
+			// The "N windows not shown" notice adds a blank line + a text
+			// line above the normal actions bar.
+			h += 2
+			break
+		}
+	}
 	if h < 8 {
 		h = 8
 	}
@@ -281,15 +330,23 @@ func cmdSwitchLane(key string) error {
 		nextIdx := (idx + 1) % len(laneWins)
 		nextWin := laneWins[nextIdx]
 		tmuxSetSessionOption(sessID, "@lane_"+key+"_window", nextWin.ID)
-		return tmuxRun("select-window", "-t", nextWin.ID)
+		if err := tmuxRun("select-window", "-t", nextWin.ID); err != nil {
+			return err
+		}
+		recordWindowVisit(nextWin.ID)
+		return nil
 	}
 
 	// Switching to a different lane.
-	tmuxSetSessionOption(sessID, "@prev_lane", currentLane)
+	tmuxSetSessionOption(sessID, "@hometown_flip_window", currentLane)
 
 	targetWinID := tmuxGetSessionOption(sessID, "@lane_"+key+"_window")
 	if targetWinID != "" && windowExists(targetWinID) {
-		return tmuxRun("select-window", "-t", targetWinID)
+		if err := tmuxRun("select-window", "-t", targetWinID); err != nil {
+			return err
+		}
+		recordWindowVisit(targetWinID)
+		return nil
 	}
 
 	// No window in this lane yet — create one.
@@ -302,34 +359,39 @@ func cmdSwitchLane(key string) error {
 	newWinID := strings.TrimSpace(string(out))
 	tmuxRun("set-window-option", "-t", newWinID, "@lane", key)
 	tmuxSetSessionOption(sessID, "@lane_"+key+"_window", newWinID)
+	recordWindowVisit(newWinID)
 	return nil
 }
 
-func cmdPreviousLane() error {
+func cmdFlipWindow() error {
 	sessID, curWinID, err := getCurrentSessionAndWindow()
 	if err != nil {
 		return err
 	}
 
 	currentLane := getCurrentLane()
-	prevLane := tmuxGetSessionOption(sessID, "@prev_lane")
+	prevLane := tmuxGetSessionOption(sessID, "@hometown_flip_window")
 
 	if prevLane == "" || prevLane == currentLane {
-		return tmuxRun("display-message", "No previous lane")
+		return tmuxRun("display-message", "No flip window")
 	}
 
 	// Save current window and swap prev/current.
 	tmuxSetSessionOption(sessID, "@lane_"+currentLane+"_window", curWinID)
-	tmuxSetSessionOption(sessID, "@prev_lane", currentLane)
+	tmuxSetSessionOption(sessID, "@hometown_flip_window", currentLane)
 
 	tmuxRun("display-message", "[ Window "+laneDisplayLabel(prevLane)+" ]")
 
 	targetWinID := tmuxGetSessionOption(sessID, "@lane_"+prevLane+"_window")
 	if targetWinID != "" && windowExists(targetWinID) {
-		return tmuxRun("select-window", "-t", targetWinID)
+		if err := tmuxRun("select-window", "-t", targetWinID); err != nil {
+			return err
+		}
+		recordWindowVisit(targetWinID)
+		return nil
 	}
 
-	// No window in previous lane — create one.
+	// No window in previous target lane — create one.
 	out, err := exec.Command("tmux", "new-window",
 		"-c", "#{pane_current_path}",
 		"-P", "-F", "#{window_id}").Output()
@@ -339,6 +401,7 @@ func cmdPreviousLane() error {
 	newWinID := strings.TrimSpace(string(out))
 	tmuxRun("set-window-option", "-t", newWinID, "@lane", prevLane)
 	tmuxSetSessionOption(sessID, "@lane_"+prevLane+"_window", newWinID)
+	recordWindowVisit(newWinID)
 	return nil
 }
 
@@ -361,6 +424,7 @@ func cmdNewWindow() error {
 	newWinID := strings.TrimSpace(string(out))
 	tmuxRun("set-window-option", "-t", newWinID, "@lane", currentLane)
 	tmuxSetSessionOption(sessID, "@lane_"+currentLane+"_window", newWinID)
+	recordWindowVisit(newWinID)
 	return nil
 }
 
@@ -426,7 +490,7 @@ func cmdSwitchStore(key string) error {
 
 	currentKey := storeKeyForSession(currentSessID)
 	if currentKey != "" && currentKey != key {
-		tmuxSetGlobalOption("@hometown_prev_store", currentKey)
+		tmuxSetGlobalOption("@hometown_flip_session", currentKey)
 	}
 
 	sessions := getStoreSessions(key)
@@ -440,7 +504,11 @@ func cmdSwitchStore(key string) error {
 		if err := setStore(key, newSessID); err != nil {
 			return err
 		}
-		return tmuxRun("switch-client", "-t", newSessID)
+		if err := tmuxRun("switch-client", "-t", newSessID); err != nil {
+			return err
+		}
+		recordActiveWindowVisit(newSessID)
+		return nil
 	}
 
 	if len(sessions) == 1 {
@@ -448,7 +516,11 @@ func cmdSwitchStore(key string) error {
 			tmuxRun("display-message", "[ Session "+storeDisplayNames[key]+" ]")
 			return nil
 		}
-		return tmuxRun("switch-client", "-t", sessions[0].ID)
+		if err := tmuxRun("switch-client", "-t", sessions[0].ID); err != nil {
+			return err
+		}
+		recordActiveWindowVisit(sessions[0].ID)
+		return nil
 	}
 
 	// Multiple sessions: find current position and cycle to the next.
@@ -460,7 +532,11 @@ func cmdSwitchStore(key string) error {
 		}
 	}
 	nextIdx := (idx + 1) % len(sessions)
-	return tmuxRun("switch-client", "-t", sessions[nextIdx].ID)
+	if err := tmuxRun("switch-client", "-t", sessions[nextIdx].ID); err != nil {
+		return err
+	}
+	recordActiveWindowVisit(sessions[nextIdx].ID)
+	return nil
 }
 
 // cmdSwitchStoreAndShowLanes switches to a store and opens the lanes popup
@@ -473,10 +549,10 @@ func cmdSwitchStoreAndShowLanes(key string) error {
 		return err
 	}
 
-	// Update previous store tracking.
+	// Update flip-session tracking.
 	currentKey := storeKeyForSession(currentSessID)
 	if currentKey != "" && currentKey != key {
-		tmuxSetGlobalOption("@hometown_prev_store", currentKey)
+		tmuxSetGlobalOption("@hometown_flip_session", currentKey)
 	}
 
 	// Get or create the target session (use first in the store).
@@ -532,10 +608,10 @@ func cmdSwitchStoreAndShowLanes(key string) error {
 	return nil
 }
 
-func cmdPreviousStore() error {
-	prevKey := tmuxGetGlobalOption("@hometown_prev_store")
+func cmdFlipSession() error {
+	prevKey := tmuxGetGlobalOption("@hometown_flip_session")
 	if prevKey == "" {
-		return tmuxRun("display-message", "No previous store")
+		return tmuxRun("display-message", "No flip session")
 	}
 	return cmdSwitchStore(prevKey)
 }

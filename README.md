@@ -20,8 +20,8 @@ Sessions are assigned to one of the same five slots — **H**, **J**, **K**, **L
 |---------|-------------|
 | `switch-window {h,j,k,l,;}` | Switch to that lane's last window; cycle within the lane if already there; create a window if the lane is empty |
 | `switch-session {h,j,k,l,;}` | Switch to the session assigned to that slot; cycle if multiple; create one if empty |
-| `previous-lane` | Toggle back to the previously active lane |
-| `previous-store` | Toggle back to the previously active session slot |
+| `flip-window` | Toggle back to the previously active lane |
+| `flip-session` | Toggle back to the previously active session slot |
 | `new-window` | Create a new window in the current lane |
 | `kill-window` | Kill the current window (with tmux confirmation prompt) |
 

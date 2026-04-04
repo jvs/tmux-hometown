@@ -213,6 +213,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		if m.currentWindow() == nil {
 			return m.handleEnterEmpty()
 		}
+		if w := m.currentWindow(); w != nil {
+			recordWindowVisit(w.ID)
+		}
 		return m, tea.Quit
 
 	case "esc", "alt+u":
@@ -374,11 +377,13 @@ func (m Model) handleEnterEmpty() (Model, tea.Cmd) {
 	}
 
 	if m.commandFile != "" {
+		exe, _ := os.Executable()
 		content := fmt.Sprintf(
 			"NEWWIN=$(tmux new-window -%s -t '%s' -n '%s' -c '#{pane_current_path}' -P -F '#{window_id}')\n"+
 				"tmux set-window-option -t \"$NEWWIN\" @lane '%s'\n"+
+				"%s record-window-visit \"$NEWWIN\"\n"+
 				"tmux select-window -t \"$NEWWIN\"\n",
-			position, targetID, name, laneKey)
+			position, targetID, name, laneKey, exe)
 		os.WriteFile(m.commandFile, []byte(content), 0644)
 		return m, tea.Quit
 	}
@@ -390,6 +395,7 @@ func (m Model) handleEnterEmpty() (Model, tea.Cmd) {
 	if err == nil {
 		newWinID := strings.TrimSpace(string(out))
 		tmuxRun("set-window-option", "-t", newWinID, "@lane", laneKey)
+		recordWindowVisit(newWinID)
 		tmuxRun("select-window", "-t", newWinID)
 	}
 	return m, tea.Quit
@@ -414,12 +420,13 @@ func (m Model) handleAdd(name string) (Model, tea.Cmd) {
 	}
 
 	if m.commandFile != "" {
+		exe, _ := os.Executable()
 		content := fmt.Sprintf(
 			"NEWWIN=$(tmux new-window -%s -t '%s' -n '%s' -c '#{pane_current_path}' -P -F '#{window_id}')\n"+
-				"tmux set-window-option -t \"$NEWWIN\" @lane '%s'\n",
-			position, targetID, name, laneKey)
+				"tmux set-window-option -t \"$NEWWIN\" @lane '%s'\n"+
+				"%s record-window-visit \"$NEWWIN\"\n",
+			position, targetID, name, laneKey, exe)
 		if m.returnView != "" {
-			exe, _ := os.Executable()
 			content += exe + " show-" + m.returnView + "\n"
 		}
 		os.WriteFile(m.commandFile, []byte(content), 0644)
@@ -433,6 +440,7 @@ func (m Model) handleAdd(name string) (Model, tea.Cmd) {
 	if err == nil {
 		newWinID := strings.TrimSpace(string(out))
 		tmuxRun("set-window-option", "-t", newWinID, "@lane", laneKey)
+		recordWindowVisit(newWinID)
 	}
 
 	m.refresh()
@@ -468,6 +476,21 @@ func (m Model) handleDelete() (Model, tea.Cmd) {
 		tmuxRun("kill-window", "-t", winID)
 		m.refresh()
 		m.positionOnWindow(nextID)
+		return m, nil
+	}
+
+	// No tracked windows remain. Before declaring the session dead, check
+	// whether any untracked (orphan) windows still exist in it. Killing the
+	// last tracked window should never implicitly kill the whole session when
+	// there are windows tmux-hometown doesn't manage.
+	for _, other := range m.windows {
+		if other.ID == winID {
+			continue
+		}
+		// At least one other window exists — switch there and kill just this one.
+		tmuxRun("select-window", "-t", other.ID)
+		tmuxRun("kill-window", "-t", winID)
+		m.refresh()
 		return m, nil
 	}
 
@@ -642,6 +665,18 @@ func (m Model) viewDeletedNotice() string {
 	return strings.Repeat("\n", m.height/2-1) + centered
 }
 
+// countUntracked returns the number of windows in the session that have no
+// lane assignment and therefore don't appear in the grid.
+func (m Model) countUntracked() int {
+	n := 0
+	for _, w := range m.windows {
+		if w.Lane == "" {
+			n++
+		}
+	}
+	return n
+}
+
 func (m Model) View() string {
 	if m.promptMode {
 		return m.viewPrompt()
@@ -658,12 +693,23 @@ func (m Model) View() string {
 	case m.inputMode:
 		bar = pad + dimStyle.Render(m.inputPrompt+": ") + string(m.inputValue) + cursorStyle.Render("█")
 	default:
-		bar = lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(
+		actions := lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(
 			hintStyle.Render("[a]dd   [r]ename   [d]elete   [c]ut   [p]aste   re[m]ove"))
+		if n := m.countUntracked(); n > 0 {
+			noun := "window"
+			if n > 1 {
+				noun = "windows"
+			}
+			notice := lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(
+				dimStyle.Render(fmt.Sprintf("%d %s not shown", n, noun)))
+			bar = "\n" + notice + "\n" + actions
+		} else {
+			bar = actions
+		}
 	}
 
 	content := m.viewColumn()
-	padding := m.height - (strings.Count(content, "\n") + 1)
+	padding := m.height - strings.Count(content, "\n") - strings.Count(bar, "\n") - 1
 	if padding < 1 {
 		padding = 1
 	}
