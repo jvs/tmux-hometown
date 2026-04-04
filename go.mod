@@ -1,4 +1,4 @@
-module github.com/jvs/hometown
+module github.com/jvs/tmux-hometown
 
 go 1.24.2
 

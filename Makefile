@@ -1,5 +1,5 @@
 build:
-	go build -o hometown .
+	go build .
 
 install:
 	go install .
