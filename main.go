@@ -20,7 +20,7 @@ func main() {
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "Usage: hometown <command> [args]")
 		fmt.Fprintln(os.Stderr, "Commands: switch-window, switch-session, flip-window, flip-session,")
-		fmt.Fprintln(os.Stderr, "          show-windows, show-sessions,")
+		fmt.Fprintln(os.Stderr, "          show-windows, show-sessions, show-all,")
 		fmt.Fprintln(os.Stderr, "          new-window, kill-window, kill-session,")
 		fmt.Fprintln(os.Stderr, "          previous-session, next-session,")
 		fmt.Fprintln(os.Stderr, "          previous-window-in-current-session, next-window-in-current-session,")
@@ -86,6 +86,11 @@ func main() {
 			die("%v", err)
 		}
 
+	case "show-all":
+		if err := cmdShowPopup("all"); err != nil {
+			die("%v", err)
+		}
+
 	case "switch-session-and-show-lanes":
 		if len(args) < 1 {
 			die("switch-session-and-show-lanes requires a key (h, j, k, l, or ;)")
@@ -109,6 +114,9 @@ func main() {
 
 	case "show-sessions-body":
 		runStoresBody(args)
+
+	case "show-all-body":
+		runAllBody(args)
 
 	case "tag-new-window":
 		if err := cmdTagNewWindow(); err != nil {
@@ -215,8 +223,11 @@ func writePopupScript(path, view, exe string) error {
 		body = fmt.Sprintf(
 			"#!/bin/sh\nexec %s show-sessions-body --command-file %s --return-view sessions\n",
 			exe, popupCmdFile)
+	case "all":
+		body = fmt.Sprintf(
+			"#!/bin/sh\nexec %s show-all-body --command-file %s\n",
+			exe, popupCmdFile)
 	default:
-		return fmt.Errorf("unknown view: %s", view)
 	}
 	if err := os.WriteFile(path, []byte(body), 0644); err != nil {
 		return err
@@ -246,6 +257,14 @@ func buildPopupArgs(view, scriptPath, exe string) []string {
 			"-h", fmt.Sprintf("%d", height),
 			"-w", "90",
 			"-T", "#[align=centre fg=white] Sessions ",
+			"-EE", scriptPath,
+		)
+
+	case "all":
+		return append(base,
+			"-h", "16",
+			"-w", "90",
+			"-T", "#[align=centre fg=white] All ",
 			"-EE", scriptPath,
 		)
 

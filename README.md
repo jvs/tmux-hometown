@@ -32,6 +32,7 @@ Sessions are assigned to one of the same five slots — **H**, **J**, **K**, **L
 |---------|-------------|
 | `show-windows` | Open (or close) the windows popup |
 | `show-sessions` | Open (or close) the sessions popup |
+| `show-all` | Open (or close) the all-sessions-and-windows popup |
 
 Both popups toggle: running the command while the popup is open closes it.
 
