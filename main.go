@@ -21,7 +21,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Usage: hometown <command> [args]")
 		fmt.Fprintln(os.Stderr, "Commands: switch-window, switch-session, flip-window, flip-session,")
 		fmt.Fprintln(os.Stderr, "          show-windows, show-sessions,")
-		fmt.Fprintln(os.Stderr, "          new-window, kill-window,")
+		fmt.Fprintln(os.Stderr, "          new-window, kill-window, kill-session,")
 		fmt.Fprintln(os.Stderr, "          previous-session, next-session,")
 		fmt.Fprintln(os.Stderr, "          previous-window-in-current-session, next-window-in-current-session,")
 		fmt.Fprintln(os.Stderr, "          previous-window-in-any-session, next-window-in-any-session")
@@ -73,6 +73,11 @@ func main() {
 
 	case "kill-window":
 		if err := cmdKillWindow(); err != nil {
+			die("%v", err)
+		}
+
+	case "kill-session":
+		if err := cmdKillSession(); err != nil {
 			die("%v", err)
 		}
 
@@ -433,35 +438,58 @@ func cmdKillWindow() error {
 	if err != nil {
 		return err
 	}
-
 	currentLane := getCurrentLane()
 	windows, _ := loadWindows(sessID)
-	laneWins := filterByLane(windows, currentLane)
+	confirmCmd := buildKillWindowConfirmCmd(sessID, curWinID, currentLane, windows)
+	return tmuxRun("confirm-before", "-p", " Kill window?", confirmCmd)
+}
 
-	var fallbackWinID string
-	for _, w := range laneWins {
+// buildKillWindowConfirmCmd returns the tmux command string to run when the
+// user confirms a kill-window. It picks the safest switch target:
+//  1. Another window in the same lane (also updates @lane_X_window).
+//  2. Any other window in the session.
+//  3. Another session entirely (when this is the last window).
+//  4. No switch needed (only session — tmux will exit).
+func buildKillWindowConfirmCmd(sessID, curWinID, currentLane string, windows []Window) string {
+	for _, w := range filterByLane(windows, currentLane) {
 		if w.ID != curWinID {
-			fallbackWinID = w.ID
-			break
+			return fmt.Sprintf(
+				"kill-window; select-window -t %s; set-option @lane_%s_window %s",
+				w.ID, currentLane, w.ID)
 		}
 	}
+	for _, w := range windows {
+		if w.ID != curWinID {
+			return fmt.Sprintf("kill-window; select-window -t %s", w.ID)
+		}
+	}
+	// Last window in the session — must move to another session first.
+	all, _ := listAllSessions()
+	if len(all) <= 1 {
+		return "kill-window" // only session; tmux will exit
+	}
+	fallbackID := findFallbackSessionID(sessID, all)
+	// kill-window on the last window also kills the session, so switching
+	// the client away first keeps it alive.
+	return fmt.Sprintf("switch-client -t %s; kill-window -t %s", fallbackID, curWinID)
+}
 
-	exe, err := os.Executable()
+func cmdKillSession() error {
+	sessID, _, err := getCurrentSessionAndWindow()
 	if err != nil {
-		exe = "hometown"
+		return err
 	}
-
+	sess, _ := loadSession(sessID)
+	all, _ := listAllSessions()
 	var confirmCmd string
-	if fallbackWinID != "" {
-		confirmCmd = fmt.Sprintf(
-			"kill-window; select-window -t %s; set-option @lane_%s_window %s",
-			fallbackWinID, currentLane, fallbackWinID)
+	if len(all) <= 1 {
+		confirmCmd = "kill-session"
 	} else {
-		// Last window in this lane: after kill, switch to lane j.
-		confirmCmd = fmt.Sprintf("kill-window; run-shell '%s switch-window j'", exe)
+		fallbackID := findFallbackSessionID(sessID, all)
+		confirmCmd = fmt.Sprintf("switch-client -t %s; kill-session -t %s", fallbackID, sessID)
 	}
-
-	return tmuxRun("confirm-before", "-p", " Kill window?", confirmCmd)
+	return tmuxRun("confirm-before", "-p",
+		fmt.Sprintf(" Kill session %q?", sess.Name), confirmCmd)
 }
 
 func cmdTagNewWindow() error {

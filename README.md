@@ -24,6 +24,7 @@ Sessions are assigned to one of the same five slots — **H**, **J**, **K**, **L
 | `flip-session` | Toggle back to the previously active session slot |
 | `new-window` | Create a new window in the current lane |
 | `kill-window` | Kill the current window (with tmux confirmation prompt) |
+| `kill-session` | Kill the current session (with tmux confirmation prompt) |
 
 ### Popups
 
