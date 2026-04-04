@@ -62,6 +62,25 @@ func loadSession(sessID string) (Session, error) {
 	return Session{ID: parts[0], Name: parts[1]}, nil
 }
 
+func listAllSessions() ([]Session, error) {
+	out, err := exec.Command("tmux", "list-sessions", "-F", "#{session_id} #{session_name}").Output()
+	if err != nil {
+		return nil, fmt.Errorf("list-sessions: %w", err)
+	}
+	var sessions []Session
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, " ", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		sessions = append(sessions, Session{ID: parts[0], Name: parts[1]})
+	}
+	return sessions, nil
+}
+
 func loadWindows(sessID string) ([]Window, error) {
 	// #{@lane} comes before #{window_name} so names with spaces are captured by SplitN.
 	out, err := exec.Command("tmux", "list-windows", "-t", sessID, "-F",
@@ -79,19 +98,19 @@ func loadWindows(sessID string) ([]Window, error) {
 			continue
 		}
 		lane := parts[2]
-		if lane == "" {
-			lane = "j" // unassigned windows default to lane-j
-		}
-		// Validate lane; anything unknown goes to j.
-		valid := false
-		for _, key := range laneOrder {
-			if key == lane {
-				valid = true
-				break
+		// Validate non-empty lane values; unknown values default to "j".
+		// Empty lane means explicitly unassigned — preserved as "".
+		if lane != "" {
+			valid := false
+			for _, key := range laneOrder {
+				if key == lane {
+					valid = true
+					break
+				}
 			}
-		}
-		if !valid {
-			lane = "j"
+			if !valid {
+				lane = "j"
+			}
 		}
 		windows = append(windows, Window{
 			ID:        parts[0],
@@ -111,6 +130,9 @@ func groupByLane(windows []Window) map[string][]Window {
 		lanes[key] = nil
 	}
 	for _, w := range windows {
+		if w.Lane == "" {
+			continue // unassigned windows are excluded from the grid
+		}
 		lanes[w.Lane] = append(lanes[w.Lane], w)
 	}
 	return lanes
@@ -119,3 +141,98 @@ func groupByLane(windows []Window) map[string][]Window {
 func tmuxRun(args ...string) error {
 	return exec.Command("tmux", args...).Run()
 }
+
+// ── Global option helpers ─────────────────────────────────────────────────────
+
+func tmuxGetGlobalOption(name string) string {
+	out, err := exec.Command("tmux", "show-option", "-gqv", name).Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func tmuxSetGlobalOption(name, value string) error {
+	return exec.Command("tmux", "set-option", "-g", name, value).Run()
+}
+
+func tmuxUnsetGlobalOption(name string) error {
+	return exec.Command("tmux", "set-option", "-gu", name).Run()
+}
+
+// ── Session option helpers ────────────────────────────────────────────────────
+
+func tmuxGetSessionOption(sessID, name string) string {
+	out, err := exec.Command("tmux", "show-option", "-t", sessID, "-qv", name).Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func tmuxSetSessionOption(sessID, name, value string) error {
+	return exec.Command("tmux", "set-option", "-t", sessID, name, value).Run()
+}
+
+// ── Window option helpers ─────────────────────────────────────────────────────
+
+// tmuxGetCurrentWindowOption reads an option from the currently active window.
+func tmuxGetCurrentWindowOption(name string) string {
+	out, err := exec.Command("tmux", "show-option", "-wqv", name).Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// ── Lane helpers ──────────────────────────────────────────────────────────────
+
+// getCurrentLane returns the @lane option of the currently active window.
+func getCurrentLane() string {
+	lane := tmuxGetCurrentWindowOption("@lane")
+	if lane == "" {
+		return "j"
+	}
+	return lane
+}
+
+// windowExists checks whether winID exists in the current session.
+func windowExists(winID string) bool {
+	out, err := exec.Command("tmux", "list-windows", "-F", "#{window_id}").Output()
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.TrimSpace(line) == winID {
+			return true
+		}
+	}
+	return false
+}
+
+// sessionExists checks whether a session ID exists.
+func sessionExists(sessID string) bool {
+	return exec.Command("tmux", "has-session", "-t", sessID).Run() == nil
+}
+
+// filterByLane returns windows in the given lane.
+func filterByLane(windows []Window, lane string) []Window {
+	var result []Window
+	for _, w := range windows {
+		if w.Lane == lane {
+			result = append(result, w)
+		}
+	}
+	return result
+}
+
+// indexByID returns the index of the window with the given ID, or 0.
+func indexByID(windows []Window, id string) int {
+	for i, w := range windows {
+		if w.ID == id {
+			return i
+		}
+	}
+	return 0
+}
+

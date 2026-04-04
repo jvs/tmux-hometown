@@ -1,111 +1,149 @@
-# laneboard
+# hometown
 
-A fast tmux lane visualizer. Shows all five lanes of the current session as
-columns, with their windows listed beneath each heading. Designed to complement
-the [lane system](https://github.com/jvs/dotfiles/blob/master/TMUX.md) in
-`jvs/dotfiles`.
+A tmux window and session manager. Organizes windows into five lanes and sessions into five slots, displayed as popup grids you can navigate and edit without leaving your workflow.
+
+## Concepts
+
+### Lanes and windows
+
+Each tmux session is divided into five lanes — **H**, **J**, **K**, **L**, **;** — each holding its own set of windows. You switch lanes with `switch-window {h,j,k,l,;}` and cycle within a lane by pressing the same key again. Windows are tagged with the `@lane` tmux option.
+
+### Sessions
+
+Sessions are assigned to one of the same five slots — **H**, **J**, **K**, **L**, **;** — using the `@hometown_store_key` session option. Multiple sessions can share a slot; `switch-session {key}` cycles through them. Sessions without a slot assignment are not shown in `show-sessions` but can be assigned one from that view.
+
+## Commands
+
+### Navigation
+
+| Command | Description |
+|---------|-------------|
+| `switch-window {h,j,k,l,;}` | Switch to that lane's last window; cycle within the lane if already there; create a window if the lane is empty |
+| `switch-session {h,j,k,l,;}` | Switch to the session assigned to that slot; cycle if multiple; create one if empty |
+| `previous-lane` | Toggle back to the previously active lane |
+| `previous-store` | Toggle back to the previously active session slot |
+| `new-window` | Create a new window in the current lane |
+| `kill-window` | Kill the current window (with tmux confirmation prompt) |
+
+### Popups
+
+| Command | Description |
+|---------|-------------|
+| `show-windows` | Open (or close) the windows popup |
+| `show-sessions` | Open (or close) the sessions popup |
+
+Both popups toggle: running the command while the popup is open closes it.
+
+## show-windows
 
 ```
-╭─ work ─────────────────────────────────────────────────────╮
-│                                                            │
-│                                                            │
-│                                                            │
-│  H           J           K           L           SC        │
-│  ────────────────────────────────────────────────────────  │
-│  tests       editor      git         claude      scratch   │
-│              server                                        │
-│              staging                                       │
-│                                                            │
-│        [a]dd   [r]ename   [d]elete   [c]ut   [p]aste       │
-╰────────────────────────────────────────────────────────────╯
+╭─ work ──────────────────────────────────────────────────────────────────────╮
+│                                                                             │
+│  H           J           K           L           ;                          │
+│  ─────────────────────────────────────────────────────────────────────────  │
+│  tests       editor      git         claude      scratch                    │
+│              server                                                         │
+│              staging                                                        │
+│                                                                             │
+│           [a]dd   [r]ename   [d]elete   [c]ut   [p]aste   re[m]ove          │
+╰─────────────────────────────────────────────────────────────────────────────╯
 ```
 
-## Background
+Moving the cursor live-switches the active window so you can preview as you navigate.
 
-The lane system divides each tmux session into five semantic lanes — **H**
-(tests), **J** (editor), **K** (git), **L** (Claude/zen), **;** (misc). Each
-lane holds its own ring of windows and remembers which window was last focused.
-You switch lanes with `alt+{h,j,k,l,;}` and cycle within a lane by pressing the
-same key again.
-
-laneboard gives you a bird's-eye view of the whole session at once, so you can
-see every lane and every window without cycling through them one at a time.
-
-## Usage
-
-Open via `alt+u` (configured in `tmux-commands.zsh`). Press `alt+u` again to
-close. Press `alt+o` to switch directly to supertree. Also available in the
-command palette (`alt+y`) as "Open Laneboard" and in the menu (`alt+n`) as
-"Open Laneboard".
-
-## Navigation
-
-Moving between lanes mirrors the lane keybindings you already use:
+### Navigation
 
 | Key | Action |
 |-----|--------|
-| `h` / `j` / `k` / `l` / `;` | Jump to that lane; or move **down** (wraps) if already there |
-| `H` / `J` / `K` / `L` / `:` | Move **up** (wraps) within the current lane (shift variant) |
+| `h` / `j` / `k` / `l` / `;` | Jump to that lane; cycle down within it if already there |
 | `↑` / `↓` | Move up / down within the current lane |
 | `←` / `→` | Move left / right between lanes |
 
-Moving the cursor live-switches the underlying tmux window, so you can preview
-windows as you navigate.
-
-## Commands
+### Actions
 
 | Key | Action |
 |-----|--------|
 | `a` | Add a new window to the current lane |
 | `r` | Rename the selected window |
 | `d` | Kill the selected window (with confirmation) |
-| `x` or `c` | Mark the selected window for cut (shown with gray `(cut)` label) |
-| `p` | Paste cut window **after** the selected window |
-| `P` | Paste cut window **before** the selected window |
-| `Enter` | Select and exit |
-| `Esc` / `alt+u` | Cancel and return to the original window |
-| `alt+o` | Switch to supertree |
+| `x` / `c` | Cut the selected window |
+| `p` / `P` | Paste the cut window after / before the selected window |
+| `m` | Remove the selected window from its lane (unassign) |
+| `Enter` | Confirm and close |
+| `Esc` | Cancel and return to the original window |
+| `u` / `U` | Switch to show-sessions |
 
-### Adding windows
+Shift+lane key (`H`, `J`, `K`, `L`, `:`) switches to that session slot and opens show-windows for it.
 
-The new window is created immediately after the selected window in tmux's
-window order and tagged with `@lane` so the lane system picks it up correctly.
-When laneboard is running as a popup, the `new-window` command is written to a
-file and executed after the popup closes, avoiding nested-popup issues.
+### Assigning untagged windows
 
-### Killing windows
+If the current window has no lane assigned, show-windows opens with a prompt:
 
-After a kill, focus moves to another window in the same lane if one exists,
-otherwise to any other window in the session.
+```
+Assign a key to window "my-window"?  [H] [J] [K] [L] [;]  [s]kip  [n]ever
+```
 
-### Cut and paste
+- Pick a lane key to assign and proceed to the grid
+- `s` — skip for now (prompt appears again next time)
+- `n` — never prompt for this window again
 
-`x` (or `c`) marks the selected window for cut — it stays visible with a gray
-`(cut)` label. Navigate to the destination lane and window, then press `p` to
-paste after or `P` to paste before. The cut window's `@lane` tag is updated and
-tmux's window order is adjusted so the position within the lane reflects the
-paste location. The pasted window becomes selected.
+## show-sessions
 
-## Implementation
+```
+╭─ Sessions ──────────────────────────────────────────────────────────────────╮
+│                                                                             │
+│  H           J           K           L           ;                          │
+│  ─────────────────────────────────────────────────────────────────────────  │
+│  work        personal    server                                             │
+│              side-proj                                                      │
+│                                                                             │
+│           [a]dd   [r]ename   [d]elete   [c]ut   [p]aste   re[m]ove          │
+╰─────────────────────────────────────────────────────────────────────────────╯
+```
 
-Written in Go using [Bubble Tea](https://github.com/charmbracelet/bubbletea)
-and [Lipgloss](https://github.com/charmbracelet/lipgloss), following the same
-approach as [tmux-supertree](https://github.com/jvs/tmux-supertree).
+Moving the cursor live-switches the active session.
 
-Lane membership is read from the `@lane` tmux window option (values: `h`, `j`,
-`k`, `l`, `semi`). Untagged windows default to lane-J, matching the lane
-system's own orphan-adoption behavior.
+### Navigation
 
-The popup is sized dynamically: its height equals the maximum number of windows
-in any single lane plus fixed overhead for the header, rule, padding, and hint
-bar.
+| Key | Action |
+|-----|--------|
+| `h` / `j` / `k` / `l` / `;` | Jump to that slot; cycle down within it if already there |
+| `↑` / `↓` | Move up / down within the current slot |
+| `←` / `→` | Move left / right between slots |
+
+### Actions
+
+| Key | Action |
+|-----|--------|
+| `a` | Create a new session in the current slot |
+| `r` | Rename the selected session |
+| `d` | Kill the selected session (with confirmation) |
+| `x` / `c` | Cut the selected session |
+| `p` | Paste the cut session into the current slot |
+| `m` | Remove the selected session from its slot (unassign) |
+| `Enter` | Confirm and close |
+| `Esc` | Cancel and return to the original session |
+| `u` / `U` / `shift+enter` | Switch to show-windows |
+
+Shift+slot key (`H`, `J`, `K`, `L`, `:`) switches to that session slot and opens show-windows for it.
+
+Killing the last tmux session exits tmux. Otherwise the client is moved to a fallback session before the kill, so the popup survives.
+
+### Assigning unassigned sessions
+
+If the current session has no slot assigned, show-sessions opens with a prompt:
+
+```
+Assign a key to session "my-session"?  [H] [J] [K] [L] [;]  [s]kip  [n]ever
+```
+
+- Pick a slot key to assign and proceed to the grid
+- `s` — skip for now (prompt appears again next time)
+- `n` — never prompt for this session again
 
 ## Build
 
 ```
-make
+make build    # produces ./hometown
+make install  # go install
 ```
-
-Produces the `laneboard` binary in the repo directory. The shell handler in
-`tmux-commands.zsh` looks for it at `~/github/jvs/tmux-laneboard/laneboard` and
-falls back to `$BIN_DIR/../runtime/tmux-laneboard/laneboard` for installed copies.

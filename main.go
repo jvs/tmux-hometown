@@ -1,34 +1,538 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
-
-	tea "github.com/charmbracelet/bubbletea"
+	"os/exec"
+	"strings"
 )
 
+const popupCmdFile = "/tmp/hometown_command"
+
 func main() {
-	commandFile := flag.String("command-file", "", "write add-window command here instead of running it")
-	returnCommand := flag.String("return-command", "", "append this command to the command file after add-window")
-	switchCommand := flag.String("switch-command", "", "write this command to the command file when switching to another tool")
-	flag.Parse()
+	if len(os.Args) < 2 {
+		fmt.Fprintln(os.Stderr, "Usage: hometown <command> [args]")
+		fmt.Fprintln(os.Stderr, "Commands: switch-window, switch-session, previous-lane, previous-store,")
+		fmt.Fprintln(os.Stderr, "          show-windows, show-sessions,")
+		fmt.Fprintln(os.Stderr, "          new-window, kill-window")
+		os.Exit(1)
+	}
 
-	initialSessID, initialWinID, err := getCurrentSessionAndWindow()
+	cmd := os.Args[1]
+	args := os.Args[2:]
+
+	switch cmd {
+	case "switch-window":
+		if len(args) < 1 {
+			die("switch-window requires a key (h, j, k, l, or ;)")
+		}
+		key, err := parseStoreKey(args[0])
+		if err != nil {
+			die("%v", err)
+		}
+		if err := cmdSwitchLane(key); err != nil {
+			die("%v", err)
+		}
+
+	case "switch-session":
+		if len(args) < 1 {
+			die("switch-session requires a key (h, j, k, l, or ;)")
+		}
+		key, err := parseStoreKey(args[0])
+		if err != nil {
+			die("%v", err)
+		}
+		if err := cmdSwitchStore(key); err != nil {
+			die("%v", err)
+		}
+
+	case "previous-lane":
+		if err := cmdPreviousLane(); err != nil {
+			die("%v", err)
+		}
+
+	case "previous-store":
+		if err := cmdPreviousStore(); err != nil {
+			die("%v", err)
+		}
+
+	case "new-window":
+		if err := cmdNewWindow(); err != nil {
+			die("%v", err)
+		}
+
+	case "kill-window":
+		if err := cmdKillWindow(); err != nil {
+			die("%v", err)
+		}
+
+	case "show-windows":
+		if err := cmdShowPopup("windows"); err != nil {
+			die("%v", err)
+		}
+
+	case "switch-session-and-show-lanes":
+		if len(args) < 1 {
+			die("switch-session-and-show-lanes requires a key (h, j, k, l, or ;)")
+		}
+		key, err := parseStoreKey(args[0])
+		if err != nil {
+			die("%v", err)
+		}
+		if err := cmdSwitchStoreAndShowLanes(key); err != nil {
+			die("%v", err)
+		}
+
+	case "show-sessions":
+		if err := cmdShowPopup("sessions"); err != nil {
+			die("%v", err)
+		}
+
+	// Internal: body commands run inside the tmux popup.
+	case "show-windows-body":
+		runWindowsBody(args)
+
+	case "show-sessions-body":
+		runStoresBody(args)
+
+	case "tag-new-window":
+		if err := cmdTagNewWindow(); err != nil {
+			die("%v", err)
+		}
+
+	default:
+		die("unknown command: %s", cmd)
+	}
+}
+
+func die(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, "hometown: "+format+"\n", args...)
+	os.Exit(1)
+}
+
+// ── Popup lifecycle ───────────────────────────────────────────────────────────
+
+func cmdShowPopup(view string) error {
+	currentView := tmuxGetGlobalOption("@hometown_popup_view")
+
+	if currentView == view {
+		// Same view is open: clear the option first, then close the popup.
+		tmuxSetGlobalOption("@hometown_popup_view", "")
+		return tmuxRun("display-popup", "-C")
+	}
+
+	if currentView != "" {
+		// A different view is open: clear and close it, then open the new one.
+		tmuxSetGlobalOption("@hometown_popup_view", "")
+		tmuxRun("display-popup", "-C")
+	}
+
+	exe, err := os.Executable()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "laneboard: %v\n", err)
-		os.Exit(1)
+		exe = "hometown"
 	}
 
-	m, err := newModel(initialSessID, initialWinID, *commandFile, *returnCommand, *switchCommand)
+	// Write body script (avoids shell quoting issues with multi-word flags).
+	scriptPath := "/tmp/hometown_" + view + "_popup.sh"
+	if err := writePopupScript(scriptPath, view, exe); err != nil {
+		return fmt.Errorf("writing popup script: %w", err)
+	}
+
+	os.Remove(popupCmdFile)
+	tmuxSetGlobalOption("@hometown_popup_view", view)
+
+	tmuxRun(buildPopupArgs(view, scriptPath, exe)...)
+
+	// Clear the view option BEFORE running the pending command, so that any
+	// show-* command in the pending script sees a clean slate.
+	tmuxSetGlobalOption("@hometown_popup_view", "")
+
+	runPendingCommand()
+	return nil
+}
+
+func writePopupScript(path, view, exe string) error {
+	var body string
+	switch view {
+	case "windows":
+		body = fmt.Sprintf(
+			"#!/bin/sh\nexec %s show-windows-body --command-file %s --return-view windows --switch-view sessions\n",
+			exe, popupCmdFile)
+	case "sessions":
+		body = fmt.Sprintf(
+			"#!/bin/sh\nexec %s show-sessions-body --command-file %s --return-view sessions\n",
+			exe, popupCmdFile)
+	default:
+		return fmt.Errorf("unknown view: %s", view)
+	}
+	if err := os.WriteFile(path, []byte(body), 0644); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0755)
+}
+
+func buildPopupArgs(view, scriptPath, exe string) []string {
+	base := []string{"display-popup", "-b", "rounded"}
+
+	switch view {
+	case "windows":
+		height := 12
+		if sessID, _, err := getCurrentSessionAndWindow(); err == nil {
+			height = calcLanesHeight(sessID)
+		}
+		return append(base,
+			"-h", fmt.Sprintf("%d", height),
+			"-w", "90",
+			"-T", "#[align=centre fg=white] #{session_name} ",
+			"-EE", scriptPath,
+		)
+
+	case "sessions":
+		height := calcStoresHeight()
+		return append(base,
+			"-h", fmt.Sprintf("%d", height),
+			"-w", "90",
+			"-T", "#[align=centre fg=white] Sessions ",
+			"-EE", scriptPath,
+		)
+
+	}
+	return append(base, "-EE", scriptPath)
+}
+
+func calcStoresHeight() int {
+	stores := groupByStore()
+	maxPerStore := 1
+	for _, key := range storeKeys {
+		if n := len(stores[key]); n > maxPerStore {
+			maxPerStore = n
+		}
+	}
+	h := maxPerStore + 7
+	if h < 8 {
+		h = 8
+	}
+	return h
+}
+
+func calcLanesHeight(sessID string) int {
+	windows, err := loadWindows(sessID)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "laneboard: %v\n", err)
-		os.Exit(1)
+		return 10
+	}
+	lanes := groupByLane(windows)
+	maxPerLane := 1
+	for _, key := range laneOrder {
+		if n := len(lanes[key]); n > maxPerLane {
+			maxPerLane = n
+		}
+	}
+	h := maxPerLane + 7
+	if h < 8 {
+		h = 8
+	}
+	return h
+}
+
+func runPendingCommand() {
+	data, err := os.ReadFile(popupCmdFile)
+	if err != nil || len(strings.TrimSpace(string(data))) == 0 {
+		return
+	}
+	// Remove file BEFORE executing — the command may itself write a new entry.
+	os.Remove(popupCmdFile)
+	exec.Command("sh", "-c", string(data)).Run()
+}
+
+// ── Lane commands ─────────────────────────────────────────────────────────────
+
+func cmdSwitchLane(key string) error {
+	sessID, curWinID, err := getCurrentSessionAndWindow()
+	if err != nil {
+		return err
 	}
 
-	p := tea.NewProgram(m, tea.WithAltScreen())
-	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "laneboard: %v\n", err)
-		os.Exit(1)
+	currentLane := getCurrentLane()
+
+	// Save current window for the current lane before doing anything.
+	tmuxSetSessionOption(sessID, "@lane_"+currentLane+"_window", curWinID)
+
+	if key == currentLane {
+		// Already in this lane — cycle to next window.
+		windows, _ := loadWindows(sessID)
+		laneWins := filterByLane(windows, key)
+		if len(laneWins) <= 1 {
+			return tmuxRun("display-message", "[ Window "+laneDisplayLabel(key)+" ]")
+		}
+		idx := indexByID(laneWins, curWinID)
+		nextIdx := (idx + 1) % len(laneWins)
+		nextWin := laneWins[nextIdx]
+		tmuxSetSessionOption(sessID, "@lane_"+key+"_window", nextWin.ID)
+		return tmuxRun("select-window", "-t", nextWin.ID)
 	}
+
+	// Switching to a different lane.
+	tmuxSetSessionOption(sessID, "@prev_lane", currentLane)
+
+	targetWinID := tmuxGetSessionOption(sessID, "@lane_"+key+"_window")
+	if targetWinID != "" && windowExists(targetWinID) {
+		return tmuxRun("select-window", "-t", targetWinID)
+	}
+
+	// No window in this lane yet — create one.
+	out, err := exec.Command("tmux", "new-window",
+		"-c", "#{pane_current_path}",
+		"-P", "-F", "#{window_id}").Output()
+	if err != nil {
+		return err
+	}
+	newWinID := strings.TrimSpace(string(out))
+	tmuxRun("set-window-option", "-t", newWinID, "@lane", key)
+	tmuxSetSessionOption(sessID, "@lane_"+key+"_window", newWinID)
+	return nil
+}
+
+func cmdPreviousLane() error {
+	sessID, curWinID, err := getCurrentSessionAndWindow()
+	if err != nil {
+		return err
+	}
+
+	currentLane := getCurrentLane()
+	prevLane := tmuxGetSessionOption(sessID, "@prev_lane")
+
+	if prevLane == "" || prevLane == currentLane {
+		return tmuxRun("display-message", "No previous lane")
+	}
+
+	// Save current window and swap prev/current.
+	tmuxSetSessionOption(sessID, "@lane_"+currentLane+"_window", curWinID)
+	tmuxSetSessionOption(sessID, "@prev_lane", currentLane)
+
+	tmuxRun("display-message", "[ Window "+laneDisplayLabel(prevLane)+" ]")
+
+	targetWinID := tmuxGetSessionOption(sessID, "@lane_"+prevLane+"_window")
+	if targetWinID != "" && windowExists(targetWinID) {
+		return tmuxRun("select-window", "-t", targetWinID)
+	}
+
+	// No window in previous lane — create one.
+	out, err := exec.Command("tmux", "new-window",
+		"-c", "#{pane_current_path}",
+		"-P", "-F", "#{window_id}").Output()
+	if err != nil {
+		return err
+	}
+	newWinID := strings.TrimSpace(string(out))
+	tmuxRun("set-window-option", "-t", newWinID, "@lane", prevLane)
+	tmuxSetSessionOption(sessID, "@lane_"+prevLane+"_window", newWinID)
+	return nil
+}
+
+func cmdNewWindow() error {
+	sessID, _, err := getCurrentSessionAndWindow()
+	if err != nil {
+		return err
+	}
+
+	// Read current lane BEFORE creating the new window (after creation the
+	// active window changes).
+	currentLane := getCurrentLane()
+
+	out, err := exec.Command("tmux", "new-window",
+		"-c", "#{pane_current_path}",
+		"-P", "-F", "#{window_id}").Output()
+	if err != nil {
+		return err
+	}
+	newWinID := strings.TrimSpace(string(out))
+	tmuxRun("set-window-option", "-t", newWinID, "@lane", currentLane)
+	tmuxSetSessionOption(sessID, "@lane_"+currentLane+"_window", newWinID)
+	return nil
+}
+
+func cmdKillWindow() error {
+	sessID, curWinID, err := getCurrentSessionAndWindow()
+	if err != nil {
+		return err
+	}
+
+	currentLane := getCurrentLane()
+	windows, _ := loadWindows(sessID)
+	laneWins := filterByLane(windows, currentLane)
+
+	var fallbackWinID string
+	for _, w := range laneWins {
+		if w.ID != curWinID {
+			fallbackWinID = w.ID
+			break
+		}
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		exe = "hometown"
+	}
+
+	var confirmCmd string
+	if fallbackWinID != "" {
+		confirmCmd = fmt.Sprintf(
+			"kill-window; select-window -t %s; set-option @lane_%s_window %s",
+			fallbackWinID, currentLane, fallbackWinID)
+	} else {
+		// Last window in this lane: after kill, switch to lane j.
+		confirmCmd = fmt.Sprintf("kill-window; run-shell '%s switch-window j'", exe)
+	}
+
+	return tmuxRun("confirm-before", "-p", " Kill window?", confirmCmd)
+}
+
+func cmdTagNewWindow() error {
+	existing := tmuxGetCurrentWindowOption("@lane")
+	if existing != "" {
+		return nil
+	}
+	// Inherit lane from the previous window, defaulting to "j".
+	out, err := exec.Command("tmux", "show-option", "-wqv", "-t", "{last}", "@lane").Output()
+	lane := "j"
+	if err == nil {
+		if l := strings.TrimSpace(string(out)); l != "" {
+			lane = l
+		}
+	}
+	return exec.Command("tmux", "set-option", "-w", "@lane", lane).Run()
+}
+
+// ── Store commands ────────────────────────────────────────────────────────────
+
+func cmdSwitchStore(key string) error {
+	currentSessID, _, err := getCurrentSessionAndWindow()
+	if err != nil {
+		return err
+	}
+
+	currentKey := storeKeyForSession(currentSessID)
+	if currentKey != "" && currentKey != key {
+		tmuxSetGlobalOption("@hometown_prev_store", currentKey)
+	}
+
+	sessions := getStoreSessions(key)
+
+	if len(sessions) == 0 {
+		// No session for this store — create one.
+		newSessID, err := newStoreSession(key)
+		if err != nil {
+			return err
+		}
+		if err := setStore(key, newSessID); err != nil {
+			return err
+		}
+		return tmuxRun("switch-client", "-t", newSessID)
+	}
+
+	if len(sessions) == 1 {
+		if sessions[0].ID == currentSessID {
+			tmuxRun("display-message", "[ Session "+storeDisplayNames[key]+" ]")
+			return nil
+		}
+		return tmuxRun("switch-client", "-t", sessions[0].ID)
+	}
+
+	// Multiple sessions: find current position and cycle to the next.
+	idx := -1
+	for i, s := range sessions {
+		if s.ID == currentSessID {
+			idx = i
+			break
+		}
+	}
+	nextIdx := (idx + 1) % len(sessions)
+	return tmuxRun("switch-client", "-t", sessions[nextIdx].ID)
+}
+
+// cmdSwitchStoreAndShowLanes switches to a store and opens the lanes popup
+// explicitly targeting a pane in the new session, so that display-popup and
+// its format-string expansion use the correct session context rather than
+// the inherited $TMUX_PANE from the original session.
+func cmdSwitchStoreAndShowLanes(key string) error {
+	currentSessID, _, err := getCurrentSessionAndWindow()
+	if err != nil {
+		return err
+	}
+
+	// Update previous store tracking.
+	currentKey := storeKeyForSession(currentSessID)
+	if currentKey != "" && currentKey != key {
+		tmuxSetGlobalOption("@hometown_prev_store", currentKey)
+	}
+
+	// Get or create the target session (use first in the store).
+	sessions := getStoreSessions(key)
+	var targetSessID string
+	if len(sessions) > 0 {
+		targetSessID = sessions[0].ID
+	} else {
+		targetSessID, err = newStoreSession(key)
+		if err != nil {
+			return err
+		}
+		if err := setStore(key, targetSessID); err != nil {
+			return err
+		}
+	}
+
+	if err := tmuxRun("switch-client", "-t", targetSessID); err != nil {
+		return err
+	}
+
+	// Get a pane in the target session using an explicit -t so we are not
+	// affected by the inherited $TMUX_PANE pointing to the old session.
+	out, err := exec.Command("tmux", "display-message", "-t", targetSessID, "-p", "#{pane_id}").Output()
+	if err != nil {
+		return err
+	}
+	paneID := strings.TrimSpace(string(out))
+
+	exe, err := os.Executable()
+	if err != nil {
+		exe = "hometown"
+	}
+
+	scriptPath := "/tmp/hometown_windows_popup.sh"
+	if err := writePopupScript(scriptPath, "windows", exe); err != nil {
+		return err
+	}
+
+	height := calcLanesHeight(targetSessID)
+
+	tmuxSetGlobalOption("@hometown_popup_view", "windows")
+	tmuxRun("display-popup",
+		"-t", paneID,
+		"-b", "rounded",
+		"-h", fmt.Sprintf("%d", height),
+		"-w", "90",
+		"-T", "#[align=centre fg=white] #{session_name} ",
+		"-EE", scriptPath,
+	)
+	tmuxSetGlobalOption("@hometown_popup_view", "")
+	runPendingCommand()
+	return nil
+}
+
+func cmdPreviousStore() error {
+	prevKey := tmuxGetGlobalOption("@hometown_prev_store")
+	if prevKey == "" {
+		return tmuxRun("display-message", "No previous store")
+	}
+	return cmdSwitchStore(prevKey)
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+// laneDisplayLabel returns a display-friendly label for a lane key.
+func laneDisplayLabel(key string) string {
+	if key == "semi" {
+		return ";"
+	}
+	return strings.ToUpper(key)
 }

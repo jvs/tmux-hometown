@@ -10,13 +10,7 @@ import (
 type ModalDoneMsg struct{ Value *string }
 
 var (
-	modalBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("62")).
-			Padding(1, 2).
-			Width(52)
-	modalHintStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	modalCursorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
+	modalHintStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 )
 
 // ConfirmModal shows a message and waits for y/Enter or Escape/n.
@@ -46,6 +40,5 @@ func (m ConfirmModal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m ConfirmModal) View() string {
-	content := m.message + "\n\n" + modalHintStyle.Render("[y] confirm  [Esc] cancel")
-	return modalBoxStyle.Render(content)
+	return m.message + "  " + modalHintStyle.Render(" [y]es   [n]o")
 }

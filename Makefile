@@ -1,4 +1,7 @@
 build:
-	go build -o laneboard .
+	go build -o hometown .
 
-.PHONY: build
+install:
+	go install .
+
+.PHONY: build install

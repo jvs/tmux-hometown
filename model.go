@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -58,10 +59,13 @@ type Model struct {
 	// Confirm modal
 	modal tea.Model
 
+	// Assign-lane prompt (shown when current window has no lane)
+	promptMode bool
+
 	// Command file for deferred add-window (when running as a popup)
-	commandFile   string
-	returnCommand string
-	switchCommand string
+	commandFile string
+	returnView  string // view name to reopen after add-window (e.g. "windows")
+	switchView  string // view name to switch to via alt+o (e.g. "sessions")
 
 	// Window to restore on cancel
 	initialWinID string
@@ -70,7 +74,7 @@ type Model struct {
 	height int
 }
 
-func newModel(initialSessID, initialWinID, commandFile, returnCommand, switchCommand string) (Model, error) {
+func newModel(initialSessID, initialWinID, commandFile, returnView, switchView string) (Model, error) {
 	sess, err := loadSession(initialSessID)
 	if err != nil {
 		return Model{}, err
@@ -80,16 +84,20 @@ func newModel(initialSessID, initialWinID, commandFile, returnCommand, switchCom
 		return Model{}, err
 	}
 
+	promptMode := tmuxGetCurrentWindowOption("@lane") == "" &&
+		tmuxGetCurrentWindowOption("@hometown_lane_never") != "1"
+
 	m := Model{
-		session:       sess,
-		windows:       windows,
-		lanes:         groupByLane(windows),
-		commandFile:   commandFile,
-		returnCommand: returnCommand,
-		switchCommand: switchCommand,
-		initialWinID:  initialWinID,
-		width:         80,
-		height:        24,
+		session:      sess,
+		windows:      windows,
+		lanes:        groupByLane(windows),
+		promptMode:   promptMode,
+		commandFile:  commandFile,
+		returnView:   returnView,
+		switchView:   switchView,
+		initialWinID: initialWinID,
+		width:        80,
+		height:       24,
 	}
 	m.positionOnWindow(initialWinID)
 	return m, nil
@@ -128,6 +136,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.inputMode {
 			return m.handleInputKey(msg)
 		}
+		if m.promptMode {
+			return m.handlePromptKey(msg)
+		}
 		return m.handleKey(msg)
 	}
 	return m, nil
@@ -148,10 +159,43 @@ func (m Model) handleInputKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		if len(m.inputValue) > 0 {
 			m.inputValue = m.inputValue[:len(m.inputValue)-1]
 		}
+	case " ":
+		m.inputValue = append(m.inputValue, ' ')
 	default:
 		if msg.Type == tea.KeyRunes {
 			m.inputValue = append(m.inputValue, msg.Runes...)
 		}
+	}
+	return m, nil
+}
+
+func (m Model) handlePromptKey(msg tea.KeyMsg) (Model, tea.Cmd) {
+	switch msg.String() {
+	case "s":
+		m.promptMode = false
+		return m, nil
+	case "n":
+		tmuxRun("set-window-option", "-t", m.initialWinID, "@hometown_lane_never", "1")
+		m.promptMode = false
+		return m, nil
+	case "esc", "alt+u":
+		tmuxRun("switch-client", "-t", m.session.ID+":"+m.initialWinID)
+		return m, tea.Quit
+	case "alt+o", "alt+U", "u", "U":
+		if m.commandFile != "" {
+			exe, _ := os.Executable()
+			os.WriteFile(m.commandFile, []byte(exe+" show-sessions\n"), 0644)
+		}
+		return m, tea.Quit
+	}
+	// Lane keys: assign the chosen lane to the current window.
+	if laneIdx, ok := laneKeyLane[msg.String()]; ok && !laneKeyShift[msg.String()] {
+		key := laneOrder[laneIdx]
+		tmuxRun("set-window-option", "-t", m.initialWinID, "@lane", key)
+		m.refresh()
+		m.positionOnWindow(m.initialWinID)
+		m.promptMode = false
+		return m, nil
 	}
 	return m, nil
 }
@@ -165,9 +209,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		tmuxRun("switch-client", "-t", m.session.ID+":"+m.initialWinID)
 		return m, tea.Quit
 
-	case "alt+o":
-		if m.switchCommand != "" && m.commandFile != "" {
-			os.WriteFile(m.commandFile, []byte(m.switchCommand+"\n"), 0644)
+	case "alt+o", "alt+U", "u", "U":
+		if m.commandFile != "" {
+			exe, _ := os.Executable()
+			os.WriteFile(m.commandFile, []byte(exe+" show-sessions\n"), 0644)
 		}
 		return m, tea.Quit
 
@@ -191,6 +236,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		if w := m.currentWindow(); w != nil {
 			m.modal = newConfirmModal(fmt.Sprintf("Kill window %q?", w.Name))
 			m.modalAction = ActionDelete
+		}
+		return m, nil
+
+	case "m":
+		if w := m.currentWindow(); w != nil {
+			exec.Command("tmux", "set-window-option", "-u", "-t", w.ID, "@lane").Run()
+			m.refresh()
 		}
 		return m, nil
 
@@ -234,18 +286,23 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, m.switchToCurrentCmd()
 	}
 
-	// Lane keys: h/j/k/l/; jump to that lane (or move down if already there).
-	// Shift variants H/J/K/L/: move up when already in that lane.
+	// Shift+key: switch to that store and reopen the lanes view for it.
+	if laneIdx, ok := laneKeyLane[msg.String()]; ok && laneKeyShift[msg.String()] {
+		storeKey := laneOrder[laneIdx]
+		if m.commandFile != "" {
+			exe, _ := os.Executable()
+			content := exe + " switch-session-and-show-lanes " + storeKey + "\n"
+			os.WriteFile(m.commandFile, []byte(content), 0644)
+		}
+		return m, tea.Quit
+	}
+
+	// Lane keys: h/j/k/l/; jump to that lane (or cycle if already there).
 	if laneIdx, ok := laneKeyLane[msg.String()]; ok {
-		shift := laneKeyShift[msg.String()]
 		if m.colLane == laneIdx {
 			windows := m.lanes[laneOrder[laneIdx]]
 			if n := len(windows); n > 0 {
-				if !shift {
-					m.colWindow = (m.colWindow + 1) % n
-				} else {
-					m.colWindow = (m.colWindow - 1 + n) % n
-				}
+				m.colWindow = (m.colWindow + 1) % n
 			}
 		} else {
 			m.colLane = laneIdx
@@ -316,8 +373,9 @@ func (m Model) handleAdd(name string) (Model, tea.Cmd) {
 			"NEWWIN=$(tmux new-window -%s -t '%s' -n '%s' -c '#{pane_current_path}' -P -F '#{window_id}')\n"+
 				"tmux set-window-option -t \"$NEWWIN\" @lane '%s'\n",
 			position, targetID, name, laneKey)
-		if m.returnCommand != "" {
-			content += m.returnCommand + "\n"
+		if m.returnView != "" {
+			exe, _ := os.Executable()
+			content += exe + " show-" + m.returnView + "\n"
 		}
 		os.WriteFile(m.commandFile, []byte(content), 0644)
 		return m, tea.Quit
@@ -464,19 +522,43 @@ func (m *Model) refresh() {
 
 // ── View ─────────────────────────────────────────────────────────────────────
 
+// jColumnOffset returns the number of spaces to the start of the J column.
+func (m Model) jColumnOffset() int {
+	const sidePad = 2
+	const gaps = 4 * 2
+	colWidth := max(10, (m.width-2*sidePad-gaps)/5)
+	return sidePad + colWidth + 2
+}
+
+func (m Model) viewPrompt() string {
+	var name string
+	for _, w := range m.windows {
+		if w.ID == m.initialWinID {
+			name = w.Name
+			break
+		}
+	}
+	question := lipgloss.NewStyle().Render(fmt.Sprintf("Assign a key to window %q?", name))
+	options := hintStyle.Render("[H] [J] [K] [L] [;]  [s]kip  [n]ever")
+	centered := lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(question + "  " + options)
+	return strings.Repeat("\n", m.height/2-1) + centered
+}
+
 func (m Model) View() string {
-	if m.modal != nil {
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center,
-			m.modal.View())
+	if m.promptMode {
+		return m.viewPrompt()
 	}
 
+	pad := strings.Repeat(" ", m.jColumnOffset())
 	var bar string
-	if m.inputMode {
+	switch {
+	case m.modal != nil:
+		bar = pad + m.modal.View()
+	case m.inputMode:
+		bar = pad + dimStyle.Render(m.inputPrompt+": ") + string(m.inputValue) + cursorStyle.Render("█")
+	default:
 		bar = lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(
-			dimStyle.Render(m.inputPrompt+": ") + string(m.inputValue) + cursorStyle.Render("█"))
-	} else {
-		bar = lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(
-			hintStyle.Render("[a]dd   [r]ename   [d]elete   [c]ut   [p]aste"))
+			hintStyle.Render("[a]dd   [r]ename   [d]elete   [c]ut   [p]aste   re[m]ove"))
 	}
 
 	content := m.viewColumn()
@@ -593,4 +675,32 @@ func truncate(s string, maxWidth int) string {
 		return s
 	}
 	return string(runes[:maxWidth-1]) + "…"
+}
+
+// runWindowsBody is the body of the show-windows popup. It parses its own flags
+// and runs the windows TUI.
+func runWindowsBody(args []string) {
+	fs := flag.NewFlagSet("show-windows-body", flag.ExitOnError)
+	commandFile := fs.String("command-file", "", "write add-window command here instead of running it")
+	returnView := fs.String("return-view", "", "view name to reopen after add-window")
+	switchView := fs.String("switch-view", "", "view name to switch to via alt+o")
+	fs.Parse(args)
+
+	initialSessID, initialWinID, err := getCurrentSessionAndWindow()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "hometown: %v\n", err)
+		os.Exit(1)
+	}
+
+	m, err := newModel(initialSessID, initialWinID, *commandFile, *returnView, *switchView)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "hometown: %v\n", err)
+		os.Exit(1)
+	}
+
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "hometown: %v\n", err)
+		os.Exit(1)
+	}
 }

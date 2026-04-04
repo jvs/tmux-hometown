@@ -1,4 +1,4 @@
-module github.com/jvs/laneboard
+module github.com/jvs/hometown
 
 go 1.24.2
 
