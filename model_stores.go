@@ -34,9 +34,9 @@ type StoresModel struct {
 	promptMode bool
 
 	// Command file for deferred operations
-	commandFile   string
-	returnView    string
-	switchView    string
+	commandFile string
+	returnView  string
+	switchView  string
 
 	// Session to restore on cancel; its store key is used to patch @hometown_flip_session on confirm.
 	initialSessID   string
@@ -343,11 +343,11 @@ func (m StoresModel) handleAdd(name string) (StoresModel, tea.Cmd) {
 	if m.commandFile != "" {
 		exe, _ := os.Executable()
 		content := fmt.Sprintf(
-			"NEWSESS=$(tmux new-session -d -s '%s' -P -F '#{session_id}' 2>/dev/null || tmux new-session -d -P -F '#{session_id}')\n"+
+			"NEWSESS=$(tmux new-session -d -s %s -P -F '#{session_id}' 2>/dev/null || tmux new-session -d -P -F '#{session_id}')\n"+
 				"tmux set-option -t \"$NEWSESS\" @hometown_store_key %s\n"+
 				"NEWWIN=$(tmux display-message -t \"$NEWSESS\" -p '#{window_id}')\n"+
 				"%s record-window-visit \"$NEWWIN\"\n",
-			name, key, exe)
+			shellSingleQuote(name), key, exe)
 		if m.returnView != "" {
 			content += exe + " show-" + m.returnView + "\n"
 		}
@@ -376,13 +376,13 @@ func (m StoresModel) handleEnterEmpty() (StoresModel, tea.Cmd) {
 		exe, _ := os.Executable()
 		name := "Session " + storeSessionNames[key]
 		content := fmt.Sprintf(
-			"NEWSESS=$(tmux new-session -d -s '%s' -P -F '#{session_id}' 2>/dev/null || tmux new-session -d -P -F '#{session_id}')\n"+
+			"NEWSESS=$(tmux new-session -d -s %s -P -F '#{session_id}' 2>/dev/null || tmux new-session -d -P -F '#{session_id}')\n"+
 				"tmux set-option -t \"$NEWSESS\" @hometown_store_key %s\n"+
 				"tmux set-window-option -t \"$NEWSESS\" @lane j\n"+
 				"tmux switch-client -t \"$NEWSESS\"\n"+
 				"NEWWIN=$(tmux display-message -t \"$NEWSESS\" -p '#{window_id}')\n"+
 				"%s record-window-visit \"$NEWWIN\"\n",
-			name, key, exe)
+			shellSingleQuote(name), key, exe)
 		os.WriteFile(m.commandFile, []byte(content), 0644)
 		return m, tea.Quit
 	}

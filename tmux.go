@@ -236,3 +236,9 @@ func indexByID(windows []Window, id string) int {
 	return 0
 }
 
+// shellSingleQuote wraps s in single quotes, escaping any single quotes within
+// s using backslash. The result is safe to embed in a shell script regardless
+// of what characters s contains.
+func shellSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}

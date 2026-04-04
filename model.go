@@ -379,11 +379,11 @@ func (m Model) handleEnterEmpty() (Model, tea.Cmd) {
 	if m.commandFile != "" {
 		exe, _ := os.Executable()
 		content := fmt.Sprintf(
-			"NEWWIN=$(tmux new-window -%s -t '%s' -n '%s' -c '#{pane_current_path}' -P -F '#{window_id}')\n"+
+			"NEWWIN=$(tmux new-window -%s -t '%s' -n %s -c '#{pane_current_path}' -P -F '#{window_id}')\n"+
 				"tmux set-window-option -t \"$NEWWIN\" @lane '%s'\n"+
 				"%s record-window-visit \"$NEWWIN\"\n"+
 				"tmux select-window -t \"$NEWWIN\"\n",
-			position, targetID, name, laneKey, exe)
+			position, targetID, shellSingleQuote(name), laneKey, exe)
 		os.WriteFile(m.commandFile, []byte(content), 0644)
 		return m, tea.Quit
 	}
@@ -422,10 +422,10 @@ func (m Model) handleAdd(name string) (Model, tea.Cmd) {
 	if m.commandFile != "" {
 		exe, _ := os.Executable()
 		content := fmt.Sprintf(
-			"NEWWIN=$(tmux new-window -%s -t '%s' -n '%s' -c '#{pane_current_path}' -P -F '#{window_id}')\n"+
+			"NEWWIN=$(tmux new-window -%s -t '%s' -n %s -c '#{pane_current_path}' -P -F '#{window_id}')\n"+
 				"tmux set-window-option -t \"$NEWWIN\" @lane '%s'\n"+
 				"%s record-window-visit \"$NEWWIN\"\n",
-			position, targetID, name, laneKey, exe)
+			position, targetID, shellSingleQuote(name), laneKey, exe)
 		if m.returnView != "" {
 			content += exe + " show-" + m.returnView + "\n"
 		}
