@@ -1,4 +1,4 @@
-# hometown
+# tmux-hometown
 
 A tmux window and session manager. Organizes windows into five lanes and sessions into five slots, displayed as popup grids you can navigate and edit without leaving your workflow.
 
@@ -141,9 +141,68 @@ Assign a key to session "my-session"?  [H] [J] [K] [L] [;]  [s]kip  [n]ever
 - `s` — skip for now (prompt appears again next time)
 - `n` — never prompt for this session again
 
+## Install
+
+**With Go:**
+
+```bash
+go install github.com/jvs/tmux-hometown@latest
+```
+
+**Binary download (no Go required):**
+
+```bash
+# macOS (Apple Silicon)
+curl -fsSL https://github.com/jvs/tmux-hometown/releases/latest/download/tmux-hometown-darwin-arm64 \
+  -o ~/.local/bin/tmux-hometown && chmod +x ~/.local/bin/tmux-hometown
+
+# macOS (Intel)
+curl -fsSL https://github.com/jvs/tmux-hometown/releases/latest/download/tmux-hometown-darwin-amd64 \
+  -o ~/.local/bin/tmux-hometown && chmod +x ~/.local/bin/tmux-hometown
+
+# Linux (arm64)
+curl -fsSL https://github.com/jvs/tmux-hometown/releases/latest/download/tmux-hometown-linux-arm64 \
+  -o ~/.local/bin/tmux-hometown && chmod +x ~/.local/bin/tmux-hometown
+
+# Linux (amd64)
+curl -fsSL https://github.com/jvs/tmux-hometown/releases/latest/download/tmux-hometown-linux-amd64 \
+  -o ~/.local/bin/tmux-hometown && chmod +x ~/.local/bin/tmux-hometown
+```
+
+Make sure `~/.local/bin` is on your `$PATH`.
+
 ## Build
 
+```bash
+make build           # produces ./tmux-hometown (version: "dev")
+make install         # go install (version: "dev")
 ```
-make build    # produces ./hometown
-make install  # go install
+
+## Releases
+
+Binaries for macOS (arm64/amd64) and Linux (arm64/amd64) are built automatically
+by GitHub Actions when a version tag is pushed. The version string is injected at
+build time via ldflags — you never manually edit it in source.
+
+To cut a release:
+
+```bash
+make release VERSION=v0.1.0
 ```
+
+This will abort if you are not on `main` or if the working tree is dirty, then
+push `main`, create the tag, and push the tag. The tag push triggers the release
+workflow (`.github/workflows/release.yml`), which builds the binaries and
+attaches them to a GitHub release.
+
+### Versioning
+
+This project uses [semantic versioning](https://semver.org/) with a `v` prefix.
+
+- Stay on `v0.x.y` while the tool is evolving — it signals "works well but may change"
+- Increment the **patch** version (`v0.1.0` → `v0.1.1`) for bug fixes
+- Increment the **minor** version (`v0.1.0` → `v0.2.0`) for new features
+- The **major** version stays at `0` until the interface is stable
+
+Do not manually update `var version` in `main.go` or `VERSION` in the Makefile —
+they default to `"dev"` intentionally. The git tag is the single source of truth.

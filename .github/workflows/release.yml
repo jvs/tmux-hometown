@@ -1,0 +1,32 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build binaries
+        run: |
+          for OS in darwin linux; do
+            for ARCH in amd64 arm64; do
+              GOOS=$OS GOARCH=$ARCH go build \
+                -ldflags "-s -w -X main.version=${{ github.ref_name }}" \
+                -o tmux-hometown-${OS}-${ARCH} .
+            done
+          done
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: tmux-hometown-*
