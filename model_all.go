@@ -31,7 +31,6 @@ const (
 
 var (
 	allHeaderRuleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
-	allRowRuleStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("236"))
 )
 
 // ── Data types ────────────────────────────────────────────────────────────────
@@ -177,6 +176,9 @@ func (m AllModel) handleInputKey(msg tea.KeyMsg) (AllModel, tea.Cmd) {
 func (m AllModel) handleKey(msg tea.KeyMsg) (AllModel, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
+		if m.curCol != allColSession && m.rows[m.curRow].sess == nil {
+			return m.handleEnterEmptySessionWindow()
+		}
 		return m, tea.Quit
 
 	case "esc":
@@ -394,6 +396,46 @@ func (m AllModel) handleAddWindow(name string) (AllModel, tea.Cmd) {
 	return m, nil
 }
 
+func (m AllModel) handleEnterEmptySessionWindow() (AllModel, tea.Cmd) {
+	storeKey := storeKeys[m.curRow]
+	laneKey := laneOrder[m.curCol-1]
+	sessName := "Session " + storeSessionNames[storeKey]
+	winName := "Window " + laneDisplayNames[laneKey]
+
+	if m.commandFile != "" {
+		exe, _ := os.Executable()
+		content := fmt.Sprintf(
+			"NEWSESS=$(tmux new-session -d -s %s -P -F '#{session_id}' 2>/dev/null || tmux new-session -d -P -F '#{session_id}')\n"+
+				"tmux set-option -t \"$NEWSESS\" @hometown_store_key %s\n"+
+				"NEWWIN=$(tmux display-message -t \"$NEWSESS\" -p '#{window_id}')\n"+
+				"tmux rename-window -t \"$NEWWIN\" %s\n"+
+				"tmux set-window-option -t \"$NEWWIN\" @lane '%s'\n"+
+				"%s record-window-visit \"$NEWWIN\"\n"+
+				"tmux switch-client -t \"$NEWSESS\"\n",
+			shellSingleQuote(sessName), storeKey, shellSingleQuote(winName), laneKey, exe)
+		os.WriteFile(m.commandFile, []byte(content), 0644)
+		return m, tea.Quit
+	}
+
+	out, err := exec.Command("tmux", "new-session", "-d", "-s", sessName, "-P", "-F", "#{session_id}").Output()
+	if err != nil {
+		out, err = exec.Command("tmux", "new-session", "-d", "-P", "-F", "#{session_id}").Output()
+		if err != nil {
+			return m, nil
+		}
+	}
+	newSessID := strings.TrimSpace(string(out))
+	setSessionStoreKey(newSessID, storeKey)
+	winOut, _ := exec.Command("tmux", "list-windows", "-t", newSessID, "-F", "#{window_id}").Output()
+	if winID := strings.TrimSpace(string(winOut)); winID != "" {
+		tmuxRun("rename-window", "-t", winID, winName)
+		tmuxRun("set-window-option", "-t", winID, "@lane", laneKey)
+		recordWindowVisit(winID)
+	}
+	tmuxRun("switch-client", "-t", newSessID)
+	return m, tea.Quit
+}
+
 func (m AllModel) handleRename(name string) (AllModel, tea.Cmd) {
 	if name == "" {
 		return m, nil
@@ -581,9 +623,6 @@ func (m AllModel) View() string {
 	lines = append(lines, pad+m.renderHeader())
 	lines = append(lines, pad+allHeaderRuleStyle.Render(strings.Repeat("─", tw)))
 	for i, row := range m.rows {
-		if i > 0 {
-			lines = append(lines, pad+allRowRuleStyle.Render(strings.Repeat("─", tw)))
-		}
 		lines = append(lines, pad+m.renderRow(i, row))
 	}
 
@@ -664,7 +703,18 @@ func (m AllModel) renderRow(rowIdx int, row allRow) string {
 
 	// Window cells.
 	if row.sess == nil {
-		sb.WriteString(strings.Repeat(" ", 5*w+4*2))
+		for i := 0; i < len(laneOrder); i++ {
+			if i > 0 {
+				sb.WriteString("  ")
+			}
+			colIdx := i + 1
+			inWinCur := isCurRow && m.curCol == colIdx
+			dotStyle := lipgloss.NewStyle().Width(w).Foreground(emptyFg)
+			if inWinCur {
+				dotStyle = dotStyle.Background(lipgloss.Color("237"))
+			}
+			sb.WriteString(dotStyle.Render("."))
+		}
 	} else {
 		for i, laneKey := range laneOrder {
 			if i > 0 {

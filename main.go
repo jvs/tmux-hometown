@@ -262,9 +262,9 @@ func buildPopupArgs(view, scriptPath, exe string) []string {
 
 	case "all":
 		return append(base,
-			"-h", "16",
+			"-h", "12",
 			"-w", "90",
-			"-T", "#[align=centre fg=white] All ",
+			"-T", "#[align=centre fg=white] Hometown Sessions ",
 			"-EE", scriptPath,
 		)
 
