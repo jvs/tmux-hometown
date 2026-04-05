@@ -10,7 +10,7 @@ Each tmux session is divided into five lanes — **H**, **J**, **K**, **L**, **;
 
 ### Sessions
 
-Sessions are assigned to one of the same five slots — **H**, **J**, **K**, **L**, **;** — using the `@hometown_store_key` session option. Multiple sessions can share a slot; `switch-session {key}` cycles through them. Sessions without a slot assignment are not shown in `show-sessions` but can be assigned one from that view.
+Sessions are assigned to one of the same five slots — **H**, **J**, **K**, **L**, **;** — using the `@hometown_slot_key` session option. Multiple sessions can share a slot; `switch-session {key}` cycles through them. Sessions without a slot assignment are not shown in `show-sessions` but can be assigned one from that view.
 
 ## Commands
 
@@ -95,7 +95,7 @@ Shift+lane key (`H`, `J`, `K`, `L`, `:`) switches to that session slot and opens
 If the current window has no lane assigned, show-windows opens with a prompt:
 
 ```
-Assign a key to window "my-window"?  [H] [J] [K] [L] [;]  [s]kip  [n]ever
+Assign a lane to window "my-window"?  [H] [J] [K] [L] [;]  [s]kip  [n]ever
 ```
 
 - Pick a lane key to assign and proceed to the grid
@@ -149,7 +149,7 @@ Killing the last tmux session exits tmux. Otherwise the client is moved to a fal
 If the current session has no slot assigned, show-sessions opens with a prompt:
 
 ```
-Assign a key to session "my-session"?  [H] [J] [K] [L] [;]  [s]kip  [n]ever
+Assign a slot to session "my-session"?  [H] [J] [K] [L] [;]  [s]kip  [n]ever
 ```
 
 - Pick a slot key to assign and proceed to the grid

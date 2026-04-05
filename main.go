@@ -36,7 +36,7 @@ func main() {
 		if len(args) < 1 {
 			die("switch-window requires a key (h, j, k, l, or ;)")
 		}
-		key, err := parseStoreKey(args[0])
+		key, err := parseSlotKey(args[0])
 		if err != nil {
 			die("%v", err)
 		}
@@ -48,11 +48,11 @@ func main() {
 		if len(args) < 1 {
 			die("switch-session requires a key (h, j, k, l, or ;)")
 		}
-		key, err := parseStoreKey(args[0])
+		key, err := parseSlotKey(args[0])
 		if err != nil {
 			die("%v", err)
 		}
-		if err := cmdSwitchStore(key); err != nil {
+		if err := cmdSwitchSlot(key); err != nil {
 			die("%v", err)
 		}
 
@@ -95,11 +95,11 @@ func main() {
 		if len(args) < 1 {
 			die("switch-session-and-show-lanes requires a key (h, j, k, l, or ;)")
 		}
-		key, err := parseStoreKey(args[0])
+		key, err := parseSlotKey(args[0])
 		if err != nil {
 			die("%v", err)
 		}
-		if err := cmdSwitchStoreAndShowLanes(key); err != nil {
+		if err := cmdSwitchSlotAndShowLanes(key); err != nil {
 			die("%v", err)
 		}
 
@@ -113,7 +113,7 @@ func main() {
 		runWindowsBody(args)
 
 	case "show-sessions-body":
-		runStoresBody(args)
+		runSlotsBody(args)
 
 	case "show-all-body":
 		runAllBody(args)
@@ -252,7 +252,7 @@ func buildPopupArgs(view, scriptPath, exe string) []string {
 		)
 
 	case "sessions":
-		height := calcStoresHeight()
+		height := calcSlotsHeight()
 		return append(base,
 			"-h", fmt.Sprintf("%d", height),
 			"-w", "90",
@@ -272,15 +272,15 @@ func buildPopupArgs(view, scriptPath, exe string) []string {
 	return append(base, "-EE", scriptPath)
 }
 
-func calcStoresHeight() int {
-	stores := groupByStore()
-	maxPerStore := 1
-	for _, key := range storeKeys {
-		if n := len(stores[key]); n > maxPerStore {
-			maxPerStore = n
+func calcSlotsHeight() int {
+	slots := groupBySlot()
+	maxPerSlot := 1
+	for _, key := range slotKeys {
+		if n := len(slots[key]); n > maxPerSlot {
+			maxPerSlot = n
 		}
 	}
-	h := maxPerStore + 7
+	h := maxPerSlot + 7
 	if h < 8 {
 		h = 8
 	}
@@ -527,28 +527,28 @@ func cmdTagNewWindow() error {
 	return exec.Command("tmux", "set-option", "-w", "@lane", lane).Run()
 }
 
-// ── Store commands ────────────────────────────────────────────────────────────
+// ── Slot commands ─────────────────────────────────────────────────────────────
 
-func cmdSwitchStore(key string) error {
+func cmdSwitchSlot(key string) error {
 	currentSessID, _, err := getCurrentSessionAndWindow()
 	if err != nil {
 		return err
 	}
 
-	currentKey := storeKeyForSession(currentSessID)
+	currentKey := slotKeyForSession(currentSessID)
 	if currentKey != "" && currentKey != key {
 		tmuxSetGlobalOption("@hometown_flip_session", currentKey)
 	}
 
-	sessions := getStoreSessions(key)
+	sessions := getSlotSessions(key)
 
 	if len(sessions) == 0 {
-		// No session for this store — create one.
-		newSessID, err := newStoreSession(key)
+		// No session for this slot — create one.
+		newSessID, err := newSlotSession(key)
 		if err != nil {
 			return err
 		}
-		if err := setStore(key, newSessID); err != nil {
+		if err := setSlot(key, newSessID); err != nil {
 			return err
 		}
 		if err := tmuxRun("switch-client", "-t", newSessID); err != nil {
@@ -560,7 +560,7 @@ func cmdSwitchStore(key string) error {
 
 	if len(sessions) == 1 {
 		if sessions[0].ID == currentSessID {
-			tmuxRun("display-message", "[ Session "+storeDisplayNames[key]+" ]")
+			tmuxRun("display-message", "[ Session "+slotDisplayNames[key]+" ]")
 			return nil
 		}
 		if err := tmuxRun("switch-client", "-t", sessions[0].ID); err != nil {
@@ -586,33 +586,33 @@ func cmdSwitchStore(key string) error {
 	return nil
 }
 
-// cmdSwitchStoreAndShowLanes switches to a store and opens the lanes popup
+// cmdSwitchSlotAndShowLanes switches to a slot and opens the lanes popup
 // explicitly targeting a pane in the new session, so that display-popup and
 // its format-string expansion use the correct session context rather than
 // the inherited $TMUX_PANE from the original session.
-func cmdSwitchStoreAndShowLanes(key string) error {
+func cmdSwitchSlotAndShowLanes(key string) error {
 	currentSessID, _, err := getCurrentSessionAndWindow()
 	if err != nil {
 		return err
 	}
 
 	// Update flip-session tracking.
-	currentKey := storeKeyForSession(currentSessID)
+	currentKey := slotKeyForSession(currentSessID)
 	if currentKey != "" && currentKey != key {
 		tmuxSetGlobalOption("@hometown_flip_session", currentKey)
 	}
 
-	// Get or create the target session (use first in the store).
-	sessions := getStoreSessions(key)
+	// Get or create the target session (use first in the slot).
+	sessions := getSlotSessions(key)
 	var targetSessID string
 	if len(sessions) > 0 {
 		targetSessID = sessions[0].ID
 	} else {
-		targetSessID, err = newStoreSession(key)
+		targetSessID, err = newSlotSession(key)
 		if err != nil {
 			return err
 		}
-		if err := setStore(key, targetSessID); err != nil {
+		if err := setSlot(key, targetSessID); err != nil {
 			return err
 		}
 	}
@@ -660,7 +660,7 @@ func cmdFlipSession() error {
 	if prevKey == "" {
 		return tmuxRun("display-message", "No flip session")
 	}
-	return cmdSwitchStore(prevKey)
+	return cmdSwitchSlot(prevKey)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

@@ -35,10 +35,10 @@ var (
 
 // ── Data types ────────────────────────────────────────────────────────────────
 
-// allRow holds one row of the show-all table: one store-key slot and the
+// allRow holds one row of the show-all table: one slot and the
 // first window in each lane for the primary session assigned to that slot.
 type allRow struct {
-	storeKey string
+	slotKey string
 	sess     *Session          // nil when the slot is empty
 	windows  map[string]Window // lane key → first window in that lane
 }
@@ -47,7 +47,7 @@ type allRow struct {
 type AllModel struct {
 	rows []allRow
 
-	curRow int // 0–4, index into storeKeys
+	curRow int // 0–4, index into slotKeys
 	curCol int // 0=Session col, 1–5=laneOrder[curCol-1]
 
 	cutWinID  string
@@ -71,14 +71,14 @@ type AllModel struct {
 // ── Loading ───────────────────────────────────────────────────────────────────
 
 func loadAllRows() []allRow {
-	stores := groupByStore()
-	rows := make([]allRow, len(storeKeys))
-	for i, key := range storeKeys {
+	slots := groupBySlot()
+	rows := make([]allRow, len(slotKeys))
+	for i, key := range slotKeys {
 		row := allRow{
-			storeKey: key,
+			slotKey: key,
 			windows:  make(map[string]Window),
 		}
-		sessions := stores[key]
+		sessions := slots[key]
 		if len(sessions) > 0 {
 			s := sessions[0]
 			row.sess = &s
@@ -245,7 +245,7 @@ func (m AllModel) handleKey(msg tea.KeyMsg) (AllModel, tea.Cmd) {
 		return m, m.switchToCurrentCmd()
 	}
 
-	// H/J/K/L/: — jump to that store row.
+	// H/J/K/L/: — jump to that slot row.
 	if laneIdx, ok := laneKeyLane[msg.String()]; ok && laneKeyShift[msg.String()] {
 		m.curRow = laneIdx
 		return m, m.switchToCurrentCmd()
@@ -319,12 +319,12 @@ func (m AllModel) handleAdd(name string) (AllModel, tea.Cmd) {
 }
 
 func (m AllModel) handleAddSession(name string) (AllModel, tea.Cmd) {
-	key := storeKeys[m.curRow]
+	key := slotKeys[m.curRow]
 	if m.commandFile != "" {
 		exe, _ := os.Executable()
 		content := fmt.Sprintf(
 			"NEWSESS=$(tmux new-session -d -s %s -P -F '#{session_id}' 2>/dev/null || tmux new-session -d -P -F '#{session_id}')\n"+
-				"tmux set-option -t \"$NEWSESS\" @hometown_store_key %s\n"+
+				"tmux set-option -t \"$NEWSESS\" @hometown_slot_key %s\n",
 				"NEWWIN=$(tmux display-message -t \"$NEWSESS\" -p '#{window_id}')\n"+
 				"%s record-window-visit \"$NEWWIN\"\n"+
 				"%s show-all\n",
@@ -340,7 +340,7 @@ func (m AllModel) handleAddSession(name string) (AllModel, tea.Cmd) {
 		}
 	}
 	newSessID := strings.TrimSpace(string(out))
-	setSessionStoreKey(newSessID, key)
+	setSessionSlotKey(newSessID, key)
 	recordActiveWindowVisit(newSessID)
 	m.refresh()
 	return m, nil
@@ -397,22 +397,22 @@ func (m AllModel) handleAddWindow(name string) (AllModel, tea.Cmd) {
 }
 
 func (m AllModel) handleEnterEmptySessionWindow() (AllModel, tea.Cmd) {
-	storeKey := storeKeys[m.curRow]
+	slotKey := slotKeys[m.curRow]
 	laneKey := laneOrder[m.curCol-1]
-	sessName := "Session " + storeSessionNames[storeKey]
+	sessName := "Session " + slotSessionNames[slotKey]
 	winName := "Window " + laneDisplayNames[laneKey]
 
 	if m.commandFile != "" {
 		exe, _ := os.Executable()
 		content := fmt.Sprintf(
 			"NEWSESS=$(tmux new-session -d -s %s -P -F '#{session_id}' 2>/dev/null || tmux new-session -d -P -F '#{session_id}')\n"+
-				"tmux set-option -t \"$NEWSESS\" @hometown_store_key %s\n"+
+				"tmux set-option -t \"$NEWSESS\" @hometown_slot_key %s\n",
 				"NEWWIN=$(tmux display-message -t \"$NEWSESS\" -p '#{window_id}')\n"+
 				"tmux rename-window -t \"$NEWWIN\" %s\n"+
 				"tmux set-window-option -t \"$NEWWIN\" @lane '%s'\n"+
 				"%s record-window-visit \"$NEWWIN\"\n"+
 				"tmux switch-client -t \"$NEWSESS\"\n",
-			shellSingleQuote(sessName), storeKey, shellSingleQuote(winName), laneKey, exe)
+			shellSingleQuote(sessName), slotKey, shellSingleQuote(winName), laneKey, exe)
 		os.WriteFile(m.commandFile, []byte(content), 0644)
 		return m, tea.Quit
 	}
@@ -425,7 +425,7 @@ func (m AllModel) handleEnterEmptySessionWindow() (AllModel, tea.Cmd) {
 		}
 	}
 	newSessID := strings.TrimSpace(string(out))
-	setSessionStoreKey(newSessID, storeKey)
+	setSessionSlotKey(newSessID, slotKey)
 	winOut, _ := exec.Command("tmux", "list-windows", "-t", newSessID, "-F", "#{window_id}").Output()
 	if winID := strings.TrimSpace(string(winOut)); winID != "" {
 		tmuxRun("rename-window", "-t", winID, winName)
@@ -506,7 +506,7 @@ func (m AllModel) handleDeleteWindow() (AllModel, tea.Cmd) {
 func (m AllModel) handleRemove() (AllModel, tea.Cmd) {
 	if m.curCol == allColSession {
 		if s := m.currentSess(); s != nil {
-			clearStoreForSession(s.ID)
+			clearSlotForSession(s.ID)
 		}
 	} else {
 		if w := m.currentWin(); w != nil {
@@ -534,8 +534,8 @@ func (m AllModel) handleCut() (AllModel, tea.Cmd) {
 
 func (m AllModel) handlePaste() (AllModel, tea.Cmd) {
 	if m.cutSessID != "" && m.curCol == allColSession {
-		key := storeKeys[m.curRow]
-		setSessionStoreKey(m.cutSessID, key)
+		key := slotKeys[m.curRow]
+		setSessionSlotKey(m.cutSessID, key)
 		m.cutSessID = ""
 		m.refresh()
 	} else if m.cutWinID != "" && m.curCol != allColSession {
@@ -673,7 +673,7 @@ func (m AllModel) renderRow(rowIdx int, row allRow) string {
 	// Key cell.
 	keyCell := lipgloss.NewStyle().Width(allKeyColW).
 		Foreground(fg).
-		Render(storeDisplayNames[row.storeKey])
+		Render(slotDisplayNames[row.slotKey])
 
 	// Session cell.
 	inSessCur := isCurRow && m.curCol == allColSession

@@ -11,12 +11,12 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-type StoresModel struct {
-	stores map[string][]Session
+type SlotsModel struct {
+	slots map[string][]Session
 
 	// Column cursor
-	colLane int // 0–4, index into storeKeys
-	colRow  int // index into stores[storeKeys[colLane]]
+	colSlot int // 0–4, index into slotKeys
+	colRow  int // index into slots[slotKeys[colSlot]]
 
 	// Cut/paste
 	cutSessID string
@@ -30,7 +30,7 @@ type StoresModel struct {
 	// Confirm modal
 	modal tea.Model
 
-	// Assign-key prompt (shown when current session has no store key)
+	// Assign-key prompt (shown when current session has no slot key)
 	promptMode bool
 
 	// Command file for deferred operations
@@ -38,30 +38,30 @@ type StoresModel struct {
 	returnView  string
 	switchView  string
 
-	// Session to restore on cancel; its store key is used to patch @hometown_flip_session on confirm.
+	// Session to restore on cancel; its slot key is used to patch @hometown_flip_session on confirm.
 	initialSessID   string
 	initialSessName string
-	initialStoreKey string
+	initialSlotKey  string
 
 	width  int
 	height int
 }
 
-func newStoresModel(initialSessID, commandFile, returnView, switchView string) (StoresModel, error) {
-	promptMode := getSessionStoreKey(initialSessID) == "" &&
-		tmuxGetSessionOption(initialSessID, "@hometown_store_never") != "1"
+func newSlotsModel(initialSessID, commandFile, returnView, switchView string) (SlotsModel, error) {
+	promptMode := getSessionSlotKey(initialSessID) == "" &&
+		tmuxGetSessionOption(initialSessID, "@hometown_slot_never") != "1"
 
 	sess, _ := loadSession(initialSessID)
 
-	m := StoresModel{
-		stores:          groupByStore(),
+	m := SlotsModel{
+		slots:           groupBySlot(),
 		promptMode:      promptMode,
 		commandFile:     commandFile,
 		returnView:      returnView,
 		switchView:      switchView,
 		initialSessID:   initialSessID,
 		initialSessName: sess.Name,
-		initialStoreKey: getSessionStoreKey(initialSessID),
+		initialSlotKey:  getSessionSlotKey(initialSessID),
 		width:           80,
 		height:          24,
 	}
@@ -69,11 +69,11 @@ func newStoresModel(initialSessID, commandFile, returnView, switchView string) (
 	return m, nil
 }
 
-func (m *StoresModel) positionOnSession(sessID string) {
-	for li, key := range storeKeys {
-		for ri, s := range m.stores[key] {
+func (m *SlotsModel) positionOnSession(sessID string) {
+	for li, key := range slotKeys {
+		for ri, s := range m.slots[key] {
 			if s.ID == sessID {
-				m.colLane = li
+				m.colSlot = li
 				m.colRow = ri
 				return
 			}
@@ -81,9 +81,9 @@ func (m *StoresModel) positionOnSession(sessID string) {
 	}
 }
 
-func (m StoresModel) Init() tea.Cmd { return nil }
+func (m SlotsModel) Init() tea.Cmd { return nil }
 
-func (m StoresModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m SlotsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -110,7 +110,7 @@ func (m StoresModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m StoresModel) handleInputKey(msg tea.KeyMsg) (StoresModel, tea.Cmd) {
+func (m SlotsModel) handleInputKey(msg tea.KeyMsg) (SlotsModel, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.inputMode = false
@@ -135,13 +135,13 @@ func (m StoresModel) handleInputKey(msg tea.KeyMsg) (StoresModel, tea.Cmd) {
 	return m, nil
 }
 
-func (m StoresModel) handlePromptKey(msg tea.KeyMsg) (StoresModel, tea.Cmd) {
+func (m SlotsModel) handlePromptKey(msg tea.KeyMsg) (SlotsModel, tea.Cmd) {
 	switch msg.String() {
 	case "s":
 		m.promptMode = false
 		return m, nil
 	case "n":
-		tmuxSetSessionOption(m.initialSessID, "@hometown_store_never", "1")
+		tmuxSetSessionOption(m.initialSessID, "@hometown_slot_never", "1")
 		m.promptMode = false
 		return m, nil
 	case "esc", "alt+U":
@@ -157,10 +157,10 @@ func (m StoresModel) handlePromptKey(msg tea.KeyMsg) (StoresModel, tea.Cmd) {
 		return m, tea.Quit
 	}
 	// h/j/k/l/; assign the selected key to the current session.
-	for _, key := range storeKeys {
+	for _, key := range slotKeys {
 		if msg.String() == laneKeyToUserKey(key) || msg.String() == key {
-			setSessionStoreKey(m.initialSessID, key)
-			m.stores = groupByStore()
+			setSessionSlotKey(m.initialSessID, key)
+			m.slots = groupBySlot()
 			m.positionOnSession(m.initialSessID)
 			m.promptMode = false
 			return m, nil
@@ -169,7 +169,7 @@ func (m StoresModel) handlePromptKey(msg tea.KeyMsg) (StoresModel, tea.Cmd) {
 	return m, nil
 }
 
-func (m StoresModel) handleKey(msg tea.KeyMsg) (StoresModel, tea.Cmd) {
+func (m SlotsModel) handleKey(msg tea.KeyMsg) (SlotsModel, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
 		if m.currentSession() == nil {
@@ -227,7 +227,7 @@ func (m StoresModel) handleKey(msg tea.KeyMsg) (StoresModel, tea.Cmd) {
 
 	case "m":
 		if s := m.currentSession(); s != nil {
-			clearStoreForSession(s.ID)
+			clearSlotForSession(s.ID)
 			m.refresh()
 		}
 		return m, nil
@@ -242,7 +242,7 @@ func (m StoresModel) handleKey(msg tea.KeyMsg) (StoresModel, tea.Cmd) {
 		return m.handlePaste()
 
 	case "down":
-		sessions := m.stores[storeKeys[m.colLane]]
+		sessions := m.slots[slotKeys[m.colSlot]]
 		if m.colRow < len(sessions)-1 {
 			m.colRow++
 		}
@@ -255,42 +255,42 @@ func (m StoresModel) handleKey(msg tea.KeyMsg) (StoresModel, tea.Cmd) {
 		return m, m.switchToCurrentCmd()
 
 	case "right":
-		if m.colLane < len(storeKeys)-1 {
-			m.colLane++
+		if m.colSlot < len(slotKeys)-1 {
+			m.colSlot++
 			m.clampColRow()
 		}
 		return m, m.switchToCurrentCmd()
 
 	case "left":
-		if m.colLane > 0 {
-			m.colLane--
+		if m.colSlot > 0 {
+			m.colSlot--
 			m.clampColRow()
 		}
 		return m, m.switchToCurrentCmd()
 	}
 
-	// Shift+key: switch to that store and show its lanes.
+	// Shift+key: switch to that slot and show its lanes.
 	if laneIdx, ok := laneKeyLane[msg.String()]; ok && laneKeyShift[msg.String()] {
-		storeKey := storeKeys[laneIdx]
+		slotKey := slotKeys[laneIdx]
 		m.fixFlipSession()
 		if m.commandFile != "" {
 			exe, _ := os.Executable()
-			content := exe + " switch-session-and-show-lanes " + storeKey + "\n"
+			content := exe + " switch-session-and-show-lanes " + slotKey + "\n"
 			os.WriteFile(m.commandFile, []byte(content), 0644)
 		}
 		return m, tea.Quit
 	}
 
-	// Store keys: h/j/k/l/; jump to that column (or cycle within if already there).
+	// Slot keys: h/j/k/l/; jump to that column (or cycle within if already there).
 	if laneIdx, ok := laneKeyLane[msg.String()]; ok {
-		if m.colLane == laneIdx {
-			sessions := m.stores[storeKeys[laneIdx]]
+		if m.colSlot == laneIdx {
+			sessions := m.slots[slotKeys[laneIdx]]
 			if n := len(sessions); n > 0 {
 				m.colRow = (m.colRow + 1) % n
 			}
 		} else {
-			m.colLane = laneIdx
-			sessions := m.stores[storeKeys[laneIdx]]
+			m.colSlot = laneIdx
+			sessions := m.slots[slotKeys[laneIdx]]
 			if len(sessions) > 0 && m.colRow >= len(sessions) {
 				m.colRow = len(sessions) - 1
 			}
@@ -304,8 +304,8 @@ func (m StoresModel) handleKey(msg tea.KeyMsg) (StoresModel, tea.Cmd) {
 	return m, nil
 }
 
-func (m *StoresModel) clampColRow() {
-	sessions := m.stores[storeKeys[m.colLane]]
+func (m *SlotsModel) clampColRow() {
+	sessions := m.slots[slotKeys[m.colSlot]]
 	if len(sessions) > 0 && m.colRow >= len(sessions) {
 		m.colRow = len(sessions) - 1
 	}
@@ -314,7 +314,7 @@ func (m *StoresModel) clampColRow() {
 	}
 }
 
-func (m StoresModel) handleModalDone(msg ModalDoneMsg) (StoresModel, tea.Cmd) {
+func (m SlotsModel) handleModalDone(msg ModalDoneMsg) (SlotsModel, tea.Cmd) {
 	m.modal = nil
 	action := m.modalAction
 	m.modalAction = ActionNone
@@ -334,17 +334,17 @@ func (m StoresModel) handleModalDone(msg ModalDoneMsg) (StoresModel, tea.Cmd) {
 	return m, nil
 }
 
-func (m StoresModel) handleAdd(name string) (StoresModel, tea.Cmd) {
+func (m SlotsModel) handleAdd(name string) (SlotsModel, tea.Cmd) {
 	if name == "" {
 		return m, nil
 	}
-	key := storeKeys[m.colLane]
+	key := slotKeys[m.colSlot]
 
 	if m.commandFile != "" {
 		exe, _ := os.Executable()
 		content := fmt.Sprintf(
 			"NEWSESS=$(tmux new-session -d -s %s -P -F '#{session_id}' 2>/dev/null || tmux new-session -d -P -F '#{session_id}')\n"+
-				"tmux set-option -t \"$NEWSESS\" @hometown_store_key %s\n"+
+				"tmux set-option -t \"$NEWSESS\" @hometown_slot_key %s\n"+
 				"NEWWIN=$(tmux display-message -t \"$NEWSESS\" -p '#{window_id}')\n"+
 				"%s record-window-visit \"$NEWWIN\"\n",
 			shellSingleQuote(name), key, exe)
@@ -363,21 +363,21 @@ func (m StoresModel) handleAdd(name string) (StoresModel, tea.Cmd) {
 		}
 	}
 	newSessID := strings.TrimSpace(string(out))
-	setSessionStoreKey(newSessID, key)
+	setSessionSlotKey(newSessID, key)
 	recordActiveWindowVisit(newSessID)
 	m.refresh()
 	return m, nil
 }
 
-func (m StoresModel) handleEnterEmpty() (StoresModel, tea.Cmd) {
-	key := storeKeys[m.colLane]
+func (m SlotsModel) handleEnterEmpty() (SlotsModel, tea.Cmd) {
+	key := slotKeys[m.colSlot]
 
 	if m.commandFile != "" {
 		exe, _ := os.Executable()
-		name := "Session " + storeSessionNames[key]
+		name := "Session " + slotSessionNames[key]
 		content := fmt.Sprintf(
 			"NEWSESS=$(tmux new-session -d -s %s -P -F '#{session_id}' 2>/dev/null || tmux new-session -d -P -F '#{session_id}')\n"+
-				"tmux set-option -t \"$NEWSESS\" @hometown_store_key %s\n"+
+				"tmux set-option -t \"$NEWSESS\" @hometown_slot_key %s\n"+
 				"tmux set-window-option -t \"$NEWSESS\" @lane j\n"+
 				"tmux switch-client -t \"$NEWSESS\"\n"+
 				"NEWWIN=$(tmux display-message -t \"$NEWSESS\" -p '#{window_id}')\n"+
@@ -387,17 +387,17 @@ func (m StoresModel) handleEnterEmpty() (StoresModel, tea.Cmd) {
 		return m, tea.Quit
 	}
 
-	newSessID, err := newStoreSession(key)
+	newSessID, err := newSlotSession(key)
 	if err != nil {
 		return m, nil
 	}
-	setSessionStoreKey(newSessID, key)
+	setSessionSlotKey(newSessID, key)
 	tmuxRun("switch-client", "-t", newSessID)
 	recordActiveWindowVisit(newSessID)
 	return m, tea.Quit
 }
 
-func (m StoresModel) handleRename(name string) (StoresModel, tea.Cmd) {
+func (m SlotsModel) handleRename(name string) (SlotsModel, tea.Cmd) {
 	if name == "" {
 		return m, nil
 	}
@@ -412,7 +412,7 @@ func (m StoresModel) handleRename(name string) (StoresModel, tea.Cmd) {
 	return m, nil
 }
 
-func (m StoresModel) handleDelete() (StoresModel, tea.Cmd) {
+func (m SlotsModel) handleDelete() (SlotsModel, tea.Cmd) {
 	s := m.currentSession()
 	if s == nil {
 		return m, nil
@@ -434,17 +434,17 @@ func (m StoresModel) handleDelete() (StoresModel, tea.Cmd) {
 	return m, nil
 }
 
-func (m StoresModel) findFallbackSession(deletedID string, all []Session) string {
+func (m SlotsModel) findFallbackSession(deletedID string, all []Session) string {
 	// 1. Another session in the same column.
-	for _, s := range m.stores[storeKeys[m.colLane]] {
+	for _, s := range m.slots[slotKeys[m.colSlot]] {
 		if s.ID != deletedID {
 			return s.ID
 		}
 	}
 
 	// 2. Any session with a key assigned.
-	for _, key := range storeKeys {
-		for _, s := range m.stores[key] {
+	for _, key := range slotKeys {
+		for _, s := range m.slots[key] {
 			if s.ID != deletedID {
 				return s.ID
 			}
@@ -472,12 +472,12 @@ func (m StoresModel) findFallbackSession(deletedID string, all []Session) string
 	return ""
 }
 
-func (m StoresModel) handlePaste() (StoresModel, tea.Cmd) {
+func (m SlotsModel) handlePaste() (SlotsModel, tea.Cmd) {
 	if m.cutSessID == "" {
 		return m, nil
 	}
-	key := storeKeys[m.colLane]
-	setSessionStoreKey(m.cutSessID, key)
+	key := slotKeys[m.colSlot]
+	setSessionSlotKey(m.cutSessID, key)
 	pastedID := m.cutSessID
 	m.cutSessID = ""
 	m.refresh()
@@ -485,8 +485,8 @@ func (m StoresModel) handlePaste() (StoresModel, tea.Cmd) {
 	return m, nil
 }
 
-func (m StoresModel) currentSession() *Session {
-	sessions := m.stores[storeKeys[m.colLane]]
+func (m SlotsModel) currentSession() *Session {
+	sessions := m.slots[slotKeys[m.colSlot]]
 	if m.colRow >= 0 && m.colRow < len(sessions) {
 		s := sessions[m.colRow]
 		return &s
@@ -494,7 +494,7 @@ func (m StoresModel) currentSession() *Session {
 	return nil
 }
 
-func (m StoresModel) switchToCurrentCmd() tea.Cmd {
+func (m SlotsModel) switchToCurrentCmd() tea.Cmd {
 	s := m.currentSession()
 	if s == nil {
 		return nil
@@ -506,26 +506,26 @@ func (m StoresModel) switchToCurrentCmd() tea.Cmd {
 	}
 }
 
-// fixFlipSession writes @hometown_flip_session with the store key of the session
+// fixFlipSession writes @hometown_flip_session with the slot key of the session
 // the user was in when they opened the popup, undoing any pollution from
 // live-preview switches.
-func (m StoresModel) fixFlipSession() {
-	if m.initialStoreKey == "" {
+func (m SlotsModel) fixFlipSession() {
+	if m.initialSlotKey == "" {
 		return
 	}
 	// Only write it when the confirmed destination is a different slot.
-	if s := m.currentSession(); s != nil && getSessionStoreKey(s.ID) == m.initialStoreKey {
+	if s := m.currentSession(); s != nil && getSessionSlotKey(s.ID) == m.initialSlotKey {
 		return
 	}
-	tmuxSetGlobalOption("@hometown_flip_session", m.initialStoreKey)
+	tmuxSetGlobalOption("@hometown_flip_session", m.initialSlotKey)
 }
 
-func (m *StoresModel) refresh() {
-	m.stores = groupByStore()
+func (m *SlotsModel) refresh() {
+	m.slots = groupBySlot()
 	m.clampColRow()
 	if m.cutSessID != "" {
 		found := false
-		for _, sessions := range m.stores {
+		for _, sessions := range m.slots {
 			for _, s := range sessions {
 				if s.ID == m.cutSessID {
 					found = true
@@ -541,14 +541,14 @@ func (m *StoresModel) refresh() {
 
 // ── View ─────────────────────────────────────────────────────────────────────
 
-func (m StoresModel) jColumnOffset() int {
+func (m SlotsModel) jColumnOffset() int {
 	const sidePad = 2
 	const gaps = 4 * 2
 	colWidth := max(10, (m.width-2*sidePad-gaps)/5)
 	return sidePad + colWidth + 2
 }
 
-func (m StoresModel) View() string {
+func (m SlotsModel) View() string {
 	if m.promptMode {
 		return m.viewPrompt()
 	}
@@ -573,9 +573,9 @@ func (m StoresModel) View() string {
 	return content + strings.Repeat("\n", padding) + bar
 }
 
-func (m StoresModel) viewPrompt() string {
+func (m SlotsModel) viewPrompt() string {
 	question := lipgloss.NewStyle().Render(
-		fmt.Sprintf("Assign a key to session %q?", m.initialSessName))
+		fmt.Sprintf("Assign a slot to session %q?", m.initialSessName))
 	options := hintStyle.Render("[H] [J] [K] [L] [;]  [s]kip  [n]ever")
 	line := question + "  " + options
 	centered := lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(line)
@@ -583,7 +583,7 @@ func (m StoresModel) viewPrompt() string {
 	return top + centered
 }
 
-func (m StoresModel) viewGrid() string {
+func (m SlotsModel) viewGrid() string {
 	const sidePad = 2
 	const gaps = 4 * 2
 	colWidth := max(10, (m.width-2*sidePad-gaps)/5)
@@ -591,15 +591,15 @@ func (m StoresModel) viewGrid() string {
 	pad := strings.Repeat(" ", sidePad)
 
 	var headerSB strings.Builder
-	for li, key := range storeKeys {
+	for li, key := range slotKeys {
 		var s lipgloss.Style
-		if li == m.colLane {
+		if li == m.colSlot {
 			s = lipgloss.NewStyle().Width(colWidth).Bold(true)
 		} else {
 			s = lipgloss.NewStyle().Width(colWidth).Foreground(lipgloss.Color("246"))
 		}
-		headerSB.WriteString(s.Render(storeDisplayNames[key]))
-		if li < len(storeKeys)-1 {
+		headerSB.WriteString(s.Render(slotDisplayNames[key]))
+		if li < len(slotKeys)-1 {
 			headerSB.WriteString("  ")
 		}
 	}
@@ -608,7 +608,7 @@ func (m StoresModel) viewGrid() string {
 
 	var colLines [][]string
 	maxHeight := 0
-	for li, key := range storeKeys {
+	for li, key := range slotKeys {
 		lines := m.renderSessionLines(li, key, colWidth)
 		colLines = append(colLines, lines)
 		if len(lines) > maxHeight {
@@ -636,9 +636,9 @@ func (m StoresModel) viewGrid() string {
 	return "\n" + strings.Join(rows, "\n")
 }
 
-func (m StoresModel) renderSessionLines(laneIdx int, key string, colWidth int) []string {
-	sessions := m.stores[key]
-	isCursorCol := laneIdx == m.colLane
+func (m SlotsModel) renderSessionLines(slotIdx int, key string, colWidth int) []string {
+	sessions := m.slots[key]
+	isCursorCol := slotIdx == m.colSlot
 
 	plain := lipgloss.NewStyle().Width(colWidth)
 	cursor := lipgloss.NewStyle().Width(colWidth).Background(lipgloss.Color("237"))
@@ -679,7 +679,7 @@ func (m StoresModel) renderSessionLines(laneIdx int, key string, colWidth int) [
 	return lines
 }
 
-func runStoresBody(args []string) {
+func runSlotsBody(args []string) {
 	fs := flag.NewFlagSet("show-sessions-body", flag.ExitOnError)
 	commandFile := fs.String("command-file", "", "write command here")
 	returnView := fs.String("return-view", "", "view name to reopen after add-session")
@@ -692,7 +692,7 @@ func runStoresBody(args []string) {
 		os.Exit(1)
 	}
 
-	m, err := newStoresModel(initialSessID, *commandFile, *returnView, *switchView)
+	m, err := newSlotsModel(initialSessID, *commandFile, *returnView, *switchView)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "hometown: %v\n", err)
 		os.Exit(1)

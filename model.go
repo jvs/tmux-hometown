@@ -299,12 +299,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, m.switchToCurrentCmd()
 	}
 
-	// Shift+key: switch to that store and reopen the lanes view for it.
+	// Shift+key: switch to that slot and reopen the lanes view for it.
 	if laneIdx, ok := laneKeyLane[msg.String()]; ok && laneKeyShift[msg.String()] {
-		storeKey := laneOrder[laneIdx]
+		slotKey := laneOrder[laneIdx]
 		if m.commandFile != "" {
 			exe, _ := os.Executable()
-			content := exe + " switch-session-and-show-lanes " + storeKey + "\n"
+			content := exe + " switch-session-and-show-lanes " + slotKey + "\n"
 			os.WriteFile(m.commandFile, []byte(content), 0644)
 		}
 		return m, tea.Quit
@@ -652,7 +652,7 @@ func (m Model) viewPrompt() string {
 			break
 		}
 	}
-	question := lipgloss.NewStyle().Render(fmt.Sprintf("Assign a key to window %q?", name))
+	question := lipgloss.NewStyle().Render(fmt.Sprintf("Assign a lane to window %q?", name))
 	options := hintStyle.Render("[H] [J] [K] [L] [;]  [s]kip  [n]ever")
 	centered := lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(question + "  " + options)
 	return strings.Repeat("\n", m.height/2-1) + centered
