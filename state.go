@@ -153,18 +153,44 @@ func buildStateLines() []string {
 
 	var lines []string
 
-	// ── Global ────────────────────────────────────────────────────────────────
-	lines = append(lines, "   "+stateHeadStyle.Render("Global"))
+	// ── Build ───────────────────────────────────────────────────────────────
+	lines = append(lines, "   "+stateHeadStyle.Render("Build"))
 	lines = append(lines, rule)
-	for _, opt := range []string{
-		"@hometown_popup_view",
-	} {
-		val := tmuxGetGlobalOption(opt)
+	exe, exeErr := os.Executable()
+	lines = append(lines,
+		fmt.Sprintf("   %s  %s",
+			stateKeyStyle.Render(fmt.Sprintf("%-22s", "version")),
+			version))
+	if exeErr == nil {
 		lines = append(lines,
 			fmt.Sprintf("   %s  %s",
-				stateKeyStyle.Render(fmt.Sprintf("%-22s", stripHometown(opt))),
-				formatStateVal(val)))
+				stateKeyStyle.Render(fmt.Sprintf("%-22s", "path")),
+				leftTruncate(exe, 58)))
+		if info, statErr := os.Stat(exe); statErr == nil {
+			lines = append(lines,
+				fmt.Sprintf("   %s  %s",
+					stateKeyStyle.Render(fmt.Sprintf("%-22s", "modified")),
+					formatModTime(info.ModTime())))
+		}
 	}
+	lines = append(lines, "")
+
+	// ── Configuration ────────────────────────────────────────────────────────
+	lines = append(lines, "   "+stateHeadStyle.Render("Configuration"))
+	lines = append(lines, rule)
+	rawActivationKey := tmuxGetGlobalOption("@hometown_activation_key")
+	activationKeyVal := rawActivationKey
+	if activationKeyVal == "" {
+		activationKeyVal = "u"
+	}
+	activationKeyDisplay := activationKeyVal
+	if rawActivationKey == "" {
+		activationKeyDisplay += "  " + dimStyle.Render("(default)")
+	}
+	lines = append(lines,
+		fmt.Sprintf("   %s  %s",
+			stateKeyStyle.Render(fmt.Sprintf("%-22s", "activation_key")),
+			activationKeyDisplay))
 	lines = append(lines, "")
 
 	// ── Sessions ──────────────────────────────────────────────────────────────
@@ -264,12 +290,34 @@ func appendStateOptVal(sb *strings.Builder, key, val string) {
 	sb.WriteString(val)
 }
 
-// formatStateVal renders a global option value: empty string → `""`, otherwise quoted.
-func formatStateVal(val string) string {
-	if val == "" {
-		return dimStyle.Render(`""`)
+// leftTruncate shortens s to at most max runes, prefixing with '…' if trimmed.
+func leftTruncate(s string, max int) string {
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
 	}
-	return fmt.Sprintf("%q", val)
+	return "…" + string(runes[len(runes)-(max-1):])
+}
+
+// formatModTime formats a file modification time as a human-readable age.
+func formatModTime(t time.Time) string {
+	ago := time.Since(t)
+	switch {
+	case ago < time.Minute:
+		return "just now"
+	case ago < time.Hour:
+		return fmt.Sprintf("%dm ago", int(ago.Minutes()))
+	case ago < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(ago.Hours()))
+	case ago < 7*24*time.Hour:
+		days := int(ago.Hours() / 24)
+		if days == 1 {
+			return "1 day ago"
+		}
+		return fmt.Sprintf("%d days ago", days)
+	default:
+		return t.Format("2006-01-02")
+	}
 }
 
 // formatVisitedTS converts a nanosecond Unix timestamp string to a human-readable age.
