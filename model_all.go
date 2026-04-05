@@ -65,6 +65,7 @@ type AllModel struct {
 	initialWinID       string
 	activationKey      string
 	shiftActivationKey string
+	cyclePattern       string
 
 	width  int
 	height int
@@ -98,12 +99,13 @@ func loadAllRows() []allRow {
 	return rows
 }
 
-func newAllModel(initialSessID, initialWinID, commandFile, activationKey, shiftActivationKey string) AllModel {
+func newAllModel(initialSessID, initialWinID, commandFile, activationKey, shiftActivationKey, cyclePattern string) AllModel {
 	m := AllModel{
 		rows:               loadAllRows(),
 		commandFile:        commandFile,
 		activationKey:      activationKey,
 		shiftActivationKey: shiftActivationKey,
+		cyclePattern:       cyclePattern,
 		initialSessID:      initialSessID,
 		initialWinID:       initialWinID,
 		width:              89,
@@ -243,20 +245,13 @@ func (m AllModel) handleKey(msg tea.KeyMsg) (AllModel, tea.Cmd) {
 		return m.handlePaste()
 	}
 
-	// Activation key: plain → show-sessions; shift → show-history.
-	if msg.String() == m.activationKey {
-		if m.commandFile != "" {
-			exe, _ := os.Executable()
-			os.WriteFile(m.commandFile, []byte(exe+" show-sessions\n"), 0644)
-		}
-		return m, tea.Quit
+	// Activation key / tab: cycle through popups.
+	key := msg.String()
+	if key == m.activationKey || key == "tab" {
+		return m, cyclePopup("grid", m.cyclePattern, m.commandFile, true)
 	}
-	if msg.String() == m.shiftActivationKey {
-		if m.commandFile != "" {
-			exe, _ := os.Executable()
-			os.WriteFile(m.commandFile, []byte(exe+" show-history\n"), 0644)
-		}
-		return m, tea.Quit
+	if key == m.shiftActivationKey || key == "shift+tab" {
+		return m, cyclePopup("grid", m.cyclePattern, m.commandFile, false)
 	}
 
 	// alt+hjkl/; — jump to that window column.
@@ -797,7 +792,7 @@ func runGridBody(args []string) {
 		activationKey = "u"
 	}
 
-	m := newAllModel(sessID, winID, *commandFile, activationKey, shiftOf(activationKey))
+	m := newAllModel(sessID, winID, *commandFile, activationKey, shiftOf(activationKey), getCyclePattern())
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "hometown: %v\n", err)

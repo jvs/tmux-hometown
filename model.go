@@ -57,6 +57,16 @@ func shiftOf(key string) string {
 	return strings.ToUpper(key)
 }
 
+// cyclePopup writes a deferred popup-switch command to commandFile and returns
+// tea.Quit. If name is not in the pattern, it quits without writing anything.
+func cyclePopup(name, pattern, commandFile string, forward bool) tea.Cmd {
+	if target := cycle(name, pattern, forward); target != "" && commandFile != "" {
+		exe, _ := os.Executable()
+		os.WriteFile(commandFile, []byte(exe+" "+target+"\n"), 0644)
+	}
+	return tea.Quit
+}
+
 type Model struct {
 	session Session
 	windows []Window
@@ -87,6 +97,7 @@ type Model struct {
 	switchView         string // view name to switch to via alt+o (e.g. "sessions")
 	activationKey      string // key that switches between popups
 	shiftActivationKey string
+	cyclePattern       string
 
 	// Window to restore on cancel
 	initialWinID string
@@ -99,7 +110,7 @@ type Model struct {
 	height int
 }
 
-func newModel(initialSessID, initialWinID, commandFile, returnView, switchView, activationKey, shiftActivationKey string) (Model, error) {
+func newModel(initialSessID, initialWinID, commandFile, returnView, switchView, activationKey, shiftActivationKey, cyclePattern string) (Model, error) {
 	sess, err := loadSession(initialSessID)
 	if err != nil {
 		return Model{}, err
@@ -122,6 +133,7 @@ func newModel(initialSessID, initialWinID, commandFile, returnView, switchView, 
 		switchView:         switchView,
 		activationKey:      activationKey,
 		shiftActivationKey: shiftActivationKey,
+		cyclePattern:       cyclePattern,
 		initialWinID:       initialWinID,
 		width:              80,
 		height:             24,
@@ -218,15 +230,13 @@ func (m Model) handlePromptKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, tea.Quit
 	}
-	// Activation key (plain or shift): switch to show-sessions.
-	if key := msg.String(); key == m.activationKey || key == m.shiftActivationKey {
-		if m.commandFile != "" {
-			exe, _ := os.Executable()
-			os.WriteFile(m.commandFile, []byte(exe+" show-sessions\n"), 0644)
-		}
-		return m, tea.Quit
+	// Activation key / tab: cycle through popups.
+	if key := msg.String(); key == m.activationKey || key == "tab" {
+		return m, cyclePopup("windows", m.cyclePattern, m.commandFile, true)
 	}
-	// Lane keys: assign the chosen lane to the current window.
+	if key := msg.String(); key == m.shiftActivationKey || key == "shift+tab" {
+		return m, cyclePopup("windows", m.cyclePattern, m.commandFile, false)
+	}
 	if laneIdx, ok := laneKeyLane[msg.String()]; ok && !laneKeyShift[msg.String()] {
 		key := laneOrder[laneIdx]
 		tmuxRun("set-window-option", "-t", m.initialWinID, "@hometown_lane", key)
@@ -354,16 +364,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, m.switchToCurrentCmd()
 	}
 
-	// Activation key (plain or shift): switch to show-sessions.
-	if key := msg.String(); key == m.activationKey || key == m.shiftActivationKey {
-		if m.commandFile != "" {
-			exe, _ := os.Executable()
-			os.WriteFile(m.commandFile, []byte(exe+" show-sessions\n"), 0644)
-		}
-		return m, tea.Quit
+	// Activation key / tab: cycle through popups.
+	if key := msg.String(); key == m.activationKey || key == "tab" {
+		return m, cyclePopup("windows", m.cyclePattern, m.commandFile, true)
 	}
-
-	// alt+hjkl/;, alt+shift+hjkl/:, or shift+hjkl/: — jump to that lane (or cycle if already there).
+	if key := msg.String(); key == m.shiftActivationKey || key == "shift+tab" {
+		return m, cyclePopup("windows", m.cyclePattern, m.commandFile, false)
+	}
 	laneIdx, ok := altLaneKeyLane[msg.String()]
 	if !ok {
 		laneIdx, ok = altShiftLaneKeyLane[msg.String()]
@@ -933,7 +940,7 @@ func runWindowsBody(args []string) {
 		activationKey = "u"
 	}
 
-	m, err := newModel(initialSessID, initialWinID, *commandFile, *returnView, *switchView, activationKey, shiftOf(activationKey))
+	m, err := newModel(initialSessID, initialWinID, *commandFile, *returnView, *switchView, activationKey, shiftOf(activationKey), getCyclePattern())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "hometown: %v\n", err)
 		os.Exit(1)

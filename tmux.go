@@ -6,6 +6,59 @@ import (
 	"strings"
 )
 
+// ── Popup cycle ───────────────────────────────────────────────────────────────
+
+// defaultCyclePattern is the order used when @hometown_cycle_pattern is unset.
+const defaultCyclePattern = "state,grid,sessions,windows,history"
+
+// popupCommand maps a short popup name to its show-* subcommand.
+var popupCommand = map[string]string{
+	"state":    "show-state",
+	"grid":     "show-grid",
+	"sessions": "show-sessions",
+	"windows":  "show-windows",
+	"history":  "show-history",
+}
+
+// getCyclePattern returns the active cycle pattern, falling back to the default.
+func getCyclePattern() string {
+	if p := tmuxGetGlobalOption("@hometown_cycle_pattern"); p != "" {
+		return p
+	}
+	return defaultCyclePattern
+}
+
+// parseCyclePattern splits a comma-separated pattern into recognised popup names.
+func parseCyclePattern(pattern string) []string {
+	var out []string
+	for _, part := range strings.Split(pattern, ",") {
+		name := strings.TrimSpace(part)
+		if _, ok := popupCommand[name]; ok {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// cycle returns the show-* command adjacent to name in pattern.
+// If forward is true it returns the next item; otherwise the previous.
+// Returns "" if name is not found in the pattern or the pattern is empty.
+func cycle(name, pattern string, forward bool) string {
+	items := parseCyclePattern(pattern)
+	for i, item := range items {
+		if item == name {
+			var j int
+			if forward {
+				j = (i + 1) % len(items)
+			} else {
+				j = (i - 1 + len(items)) % len(items)
+			}
+			return popupCommand[items[j]]
+		}
+	}
+	return ""
+}
+
 var laneOrder = []string{"h", "j", "k", "l", "semi"}
 
 var laneLabels = map[string]string{

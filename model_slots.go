@@ -39,6 +39,7 @@ type SlotsModel struct {
 	switchView         string
 	activationKey      string
 	shiftActivationKey string
+	cyclePattern       string
 
 	// Session to restore on cancel.
 	initialSessID   string
@@ -48,7 +49,7 @@ type SlotsModel struct {
 	height int
 }
 
-func newSlotsModel(initialSessID, commandFile, returnView, switchView, activationKey, shiftActivationKey string) (SlotsModel, error) {
+func newSlotsModel(initialSessID, commandFile, returnView, switchView, activationKey, shiftActivationKey, cyclePattern string) (SlotsModel, error) {
 	promptMode := getSessionSlotKey(initialSessID) == "" &&
 		tmuxGetSessionOption(initialSessID, "@hometown_slot_never") != "1"
 
@@ -62,6 +63,7 @@ func newSlotsModel(initialSessID, commandFile, returnView, switchView, activatio
 		switchView:         switchView,
 		activationKey:      activationKey,
 		shiftActivationKey: shiftActivationKey,
+		cyclePattern:       cyclePattern,
 		initialSessID:      initialSessID,
 		initialSessName:    sess.Name,
 		width:              80,
@@ -158,13 +160,12 @@ func (m SlotsModel) handlePromptKey(msg tea.KeyMsg) (SlotsModel, tea.Cmd) {
 		}
 		return m, tea.Quit
 	}
-	// Activation key: plain → show-windows, shift → show-sessions (prompt).
-	if msg.String() == m.activationKey {
-		if m.commandFile != "" {
-			exe, _ := os.Executable()
-			os.WriteFile(m.commandFile, []byte(exe+" show-windows\n"), 0644)
-		}
-		return m, tea.Quit
+	// Activation key / tab: cycle through popups.
+	if key := msg.String(); key == m.activationKey || key == "tab" {
+		return m, cyclePopup("sessions", m.cyclePattern, m.commandFile, true)
+	}
+	if key := msg.String(); key == m.shiftActivationKey || key == "shift+tab" {
+		return m, cyclePopup("sessions", m.cyclePattern, m.commandFile, false)
 	}
 	// h/j/k/l/; assign the selected key to the current session.
 	for _, key := range slotKeys {
@@ -301,20 +302,12 @@ func (m SlotsModel) handleKey(msg tea.KeyMsg) (SlotsModel, tea.Cmd) {
 		return m, m.switchToCurrentCmd()
 	}
 
-	// Activation key: plain → show-windows; shift → show-grid.
-	if msg.String() == m.activationKey {
-		if m.commandFile != "" {
-			exe, _ := os.Executable()
-			os.WriteFile(m.commandFile, []byte(exe+" show-windows\n"), 0644)
-		}
-		return m, tea.Quit
+	// Activation key / tab: cycle through popups.
+	if key := msg.String(); key == m.activationKey || key == "tab" {
+		return m, cyclePopup("sessions", m.cyclePattern, m.commandFile, true)
 	}
-	if msg.String() == m.shiftActivationKey {
-		if m.commandFile != "" {
-			exe, _ := os.Executable()
-			os.WriteFile(m.commandFile, []byte(exe+" show-grid\n"), 0644)
-		}
-		return m, tea.Quit
+	if key := msg.String(); key == m.shiftActivationKey || key == "shift+tab" {
+		return m, cyclePopup("sessions", m.cyclePattern, m.commandFile, false)
 	}
 
 	// alt+hjkl/;, alt+shift+hjkl/:, or shift+hjkl/: — jump to that slot column (or cycle within if already there).
@@ -735,7 +728,7 @@ func runSlotsBody(args []string) {
 		activationKey = "u"
 	}
 
-	m, err := newSlotsModel(initialSessID, *commandFile, *returnView, *switchView, activationKey, shiftOf(activationKey))
+	m, err := newSlotsModel(initialSessID, *commandFile, *returnView, *switchView, activationKey, shiftOf(activationKey), getCyclePattern())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "hometown: %v\n", err)
 		os.Exit(1)

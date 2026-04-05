@@ -28,9 +28,10 @@ type StateModel struct {
 	commandFile        string
 	activationKey      string
 	shiftActivationKey string
+	cyclePattern       string
 }
 
-func newStateModel(commandFile, activationKey, shiftActivationKey string) StateModel {
+func newStateModel(commandFile, activationKey, shiftActivationKey, cyclePattern string) StateModel {
 	return StateModel{
 		lines:              buildStateLines(),
 		width:              88,
@@ -38,6 +39,7 @@ func newStateModel(commandFile, activationKey, shiftActivationKey string) StateM
 		commandFile:        commandFile,
 		activationKey:      activationKey,
 		shiftActivationKey: shiftActivationKey,
+		cyclePattern:       cyclePattern,
 	}
 }
 
@@ -87,20 +89,13 @@ func (m StateModel) handleKey(msg tea.KeyMsg) (StateModel, tea.Cmd) {
 	case "g":
 		m.offset = 0
 	}
-	// Activation key: plain → show-history; shift → show-windows.
-	if msg.String() == m.activationKey {
-		if m.commandFile != "" {
-			exe, _ := os.Executable()
-			os.WriteFile(m.commandFile, []byte(exe+" show-history\n"), 0644)
-		}
-		return m, tea.Quit
+	// Activation key / tab: cycle through popups.
+	key := msg.String()
+	if key == m.activationKey || key == "tab" {
+		return m, cyclePopup("state", m.cyclePattern, m.commandFile, true)
 	}
-	if msg.String() == m.shiftActivationKey {
-		if m.commandFile != "" {
-			exe, _ := os.Executable()
-			os.WriteFile(m.commandFile, []byte(exe+" show-windows\n"), 0644)
-		}
-		return m, tea.Quit
+	if key == m.shiftActivationKey || key == "shift+tab" {
+		return m, cyclePopup("state", m.cyclePattern, m.commandFile, false)
 	}
 	return m, nil
 }
@@ -191,6 +186,16 @@ func buildStateLines() []string {
 		fmt.Sprintf("   %s  %s",
 			stateKeyStyle.Render(fmt.Sprintf("%-22s", "activation_key")),
 			activationKeyDisplay))
+
+	rawCyclePattern := tmuxGetGlobalOption("@hometown_cycle_pattern")
+	cyclePatternDisplay := rawCyclePattern
+	if rawCyclePattern == "" {
+		cyclePatternDisplay = defaultCyclePattern + "  " + dimStyle.Render("(default)")
+	}
+	lines = append(lines,
+		fmt.Sprintf("   %s  %s",
+			stateKeyStyle.Render(fmt.Sprintf("%-22s", "cycle_pattern")),
+			cyclePatternDisplay))
 	lines = append(lines, "")
 
 	// ── Sessions ──────────────────────────────────────────────────────────────
@@ -365,7 +370,7 @@ func runStateBody(args []string) {
 		activationKey = "u"
 	}
 
-	m := newStateModel(*commandFile, activationKey, shiftOf(activationKey))
+	m := newStateModel(*commandFile, activationKey, shiftOf(activationKey), getCyclePattern())
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "hometown: %v\n", err)

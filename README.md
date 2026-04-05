@@ -45,14 +45,7 @@ That's enough to get started. The other popups (`show-grid`, `show-state`) are r
 
 ### Activation key
 
-While any popup is open, the **activation key** switches between popups. Its default is `u`. Plain and shift variants follow different patterns:
-
-| Key | From show-windows | From show-sessions | From show-grid | From show-state |
-|-----|-------------------|--------------------|----------------|-----------------|
-| plain | → show-sessions | → show-windows | → show-sessions | → show-grid |
-| shift | → show-sessions | → show-grid | → show-state | → show-windows |
-
-Plain activation key toggles between show-windows and show-sessions. Shift activation key cycles through all four popups in order.
+While any popup is open, the **activation key** (default: `u`) and **Tab** cycle forward through the popups. **Shift + activation key** and **Shift+Tab** cycle backward.
 
 To use a different key, set the tmux option and update your bindings to match:
 
@@ -61,6 +54,16 @@ set -g @hometown_activation_key y
 bind y run 'hometown show-windows'
 bind Y run 'hometown show-sessions'
 ```
+
+### Cycle pattern
+
+The order in which the activation key cycles through popups is controlled by `@hometown_cycle_pattern`. The default is:
+
+```tmux
+set -g @hometown_cycle_pattern 'state,grid,sessions,windows,history'
+```
+
+Forward cycling moves to the next name in the list, wrapping from the last back to the first. Backward cycling does the reverse. Any of the five popup names (`state`, `grid`, `sessions`, `windows`, `history`) can be reordered or omitted — omitting a name removes it from the cycle entirely. The current values of both options are visible in the `show-state` popup.
 
 ## Concepts
 
@@ -116,7 +119,8 @@ Lane keys are `h j k l ;` (plain or with alt/shift).
 | `m` | Remove the selected window from its lane (unassign) |
 | `Enter` | Confirm and close; create a window if the lane is empty |
 | `Esc` | Cancel and return to the original window |
-| activation key | Switch to show-sessions |
+| activation key / Tab | Cycle to next popup |
+| shift + activation key / Shift+Tab | Cycle to previous popup |
 
 #### Assigning untagged windows
 
@@ -172,8 +176,8 @@ Moving the cursor live-switches the active session.
 | `Enter` | Confirm and close; create a session if the slot is empty |
 | `Esc` | Cancel and return to the original session |
 | `shift+enter` | Switch to show-windows |
-| activation key | Switch to show-windows |
-| shift + activation key | Switch to show-grid |
+| activation key / Tab | Cycle to next popup |
+| shift + activation key / Shift+Tab | Cycle to previous popup |
 
 Killing the last tmux session exits tmux. Otherwise the client is moved to a fallback session before the kill, so the popup survives.
 
@@ -237,8 +241,8 @@ When the cursor is in the **Session** column, actions operate on the session. Ot
 | `m` | Remove the selected session from its slot, or window from its lane |
 | `Enter` | Switch to the selected session/window and close; create if empty |
 | `Esc` | Cancel and return to the original window |
-| activation key | Switch to show-sessions |
-| shift + activation key | Switch to show-state |
+| activation key / Tab | Cycle to next popup |
+| shift + activation key / Shift+Tab | Cycle to previous popup |
 
 ## Commands
 

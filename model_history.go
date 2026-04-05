@@ -49,11 +49,12 @@ type HistoryModel struct {
 	commandFile        string
 	activationKey      string
 	shiftActivationKey string
+	cyclePattern       string
 	initialSessID      string
 	initialWinID       string
 }
 
-func newHistoryModel(commandFile, activationKey, shiftActivationKey string) (HistoryModel, error) {
+func newHistoryModel(commandFile, activationKey, shiftActivationKey, cyclePattern string) (HistoryModel, error) {
 	entries, err := buildHistoryEntries()
 	if err != nil {
 		return HistoryModel{}, err
@@ -68,6 +69,7 @@ func newHistoryModel(commandFile, activationKey, shiftActivationKey string) (His
 		commandFile:        commandFile,
 		activationKey:      activationKey,
 		shiftActivationKey: shiftActivationKey,
+		cyclePattern:       cyclePattern,
 		initialSessID:      initialSessID,
 		initialWinID:       initialWinID,
 	}, nil
@@ -257,19 +259,13 @@ func (m HistoryModel) handleKey(msg tea.KeyMsg) (HistoryModel, tea.Cmd) {
 		return m, m.previewCurrentCmd()
 	}
 
-	// Activation key: plain → show-grid; shift → show-state.
-	exe, _ := os.Executable()
-	if msg.String() == m.activationKey {
-		if m.commandFile != "" {
-			os.WriteFile(m.commandFile, []byte(exe+" show-grid\n"), 0644)
-		}
-		return m, tea.Quit
+	// Activation key / tab: cycle through popups.
+	key := msg.String()
+	if key == m.activationKey || key == "tab" {
+		return m, cyclePopup("history", m.cyclePattern, m.commandFile, true)
 	}
-	if msg.String() == m.shiftActivationKey {
-		if m.commandFile != "" {
-			os.WriteFile(m.commandFile, []byte(exe+" show-state\n"), 0644)
-		}
-		return m, tea.Quit
+	if key == m.shiftActivationKey || key == "shift+tab" {
+		return m, cyclePopup("history", m.cyclePattern, m.commandFile, false)
 	}
 
 	return m, nil
@@ -376,7 +372,7 @@ func runHistoryBody(args []string) {
 		activationKey = "u"
 	}
 
-	m, err := newHistoryModel(*commandFile, activationKey, shiftOf(activationKey))
+	m, err := newHistoryModel(*commandFile, activationKey, shiftOf(activationKey), getCyclePattern())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "hometown: %v\n", err)
 		os.Exit(1)
