@@ -39,8 +39,8 @@ var (
 // first window in each lane for the primary session assigned to that slot.
 type allRow struct {
 	slotKey string
-	sess     *Session          // nil when the slot is empty
-	windows  map[string]Window // lane key → first window in that lane
+	sess    *Session          // nil when the slot is empty
+	windows map[string]Window // lane key → first window in that lane
 }
 
 // AllModel is the TUI model for show-all.
@@ -76,7 +76,7 @@ func loadAllRows() []allRow {
 	for i, key := range slotKeys {
 		row := allRow{
 			slotKey: key,
-			windows:  make(map[string]Window),
+			windows: make(map[string]Window),
 		}
 		sessions := slots[key]
 		if len(sessions) > 0 {
@@ -325,7 +325,7 @@ func (m AllModel) handleAddSession(name string) (AllModel, tea.Cmd) {
 		content := fmt.Sprintf(
 			"NEWSESS=$(tmux new-session -d -s %s -P -F '#{session_id}' 2>/dev/null || tmux new-session -d -P -F '#{session_id}')\n"+
 				"tmux set-option -t \"$NEWSESS\" @hometown_slot_key %s\n",
-				"NEWWIN=$(tmux display-message -t \"$NEWSESS\" -p '#{window_id}')\n"+
+			"NEWWIN=$(tmux display-message -t \"$NEWSESS\" -p '#{window_id}')\n"+
 				"%s record-window-visit \"$NEWWIN\"\n"+
 				"%s show-all\n",
 			shellSingleQuote(name), key, exe, exe)
@@ -407,7 +407,7 @@ func (m AllModel) handleEnterEmptySessionWindow() (AllModel, tea.Cmd) {
 		content := fmt.Sprintf(
 			"NEWSESS=$(tmux new-session -d -s %s -P -F '#{session_id}' 2>/dev/null || tmux new-session -d -P -F '#{session_id}')\n"+
 				"tmux set-option -t \"$NEWSESS\" @hometown_slot_key %s\n",
-				"NEWWIN=$(tmux display-message -t \"$NEWSESS\" -p '#{window_id}')\n"+
+			"NEWWIN=$(tmux display-message -t \"$NEWSESS\" -p '#{window_id}')\n"+
 				"tmux rename-window -t \"$NEWWIN\" %s\n"+
 				"tmux set-window-option -t \"$NEWWIN\" @lane '%s'\n"+
 				"%s record-window-visit \"$NEWWIN\"\n"+
