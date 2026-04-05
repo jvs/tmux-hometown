@@ -451,14 +451,20 @@ func (m SlotsModel) findFallbackSession(deletedID string, all []Session) string 
 		}
 	}
 
-	// 3. Previously-viewed session.
-	out, err := exec.Command("tmux", "display-message", "-p", "#{client_last_session}").Output()
-	if err == nil {
-		prevName := strings.TrimSpace(string(out))
-		for _, s := range all {
-			if s.ID != deletedID && s.Name == prevName {
-				return s.ID
+	// 3. Most recently hometown-visited session (any).
+	if windows, err := listAllWindowVisits(); err == nil {
+		var best *visitedWindow
+		for i := range windows {
+			w := &windows[i]
+			if w.SessionID == deletedID {
+				continue
 			}
+			if best == nil || w.Visited > best.Visited {
+				best = &windows[i]
+			}
+		}
+		if best != nil {
+			return best.SessionID
 		}
 	}
 

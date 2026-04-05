@@ -487,10 +487,10 @@ func buildKillWindowConfirmCmd(sessID, curWinID, currentLane string, windows []W
 	if len(all) <= 1 {
 		return "kill-window" // only session; tmux will exit
 	}
-	fallbackID := findFallbackSessionID(sessID, all)
+	fallbackTarget := findFallbackTarget(sessID, all)
 	// kill-window on the last window also kills the session, so switching
 	// the client away first keeps it alive.
-	return fmt.Sprintf("switch-client -t %s; kill-window -t %s", fallbackID, curWinID)
+	return fmt.Sprintf("switch-client -t %s; kill-window -t %s", fallbackTarget, curWinID)
 }
 
 func cmdKillSession() error {
@@ -504,8 +504,8 @@ func cmdKillSession() error {
 	if len(all) <= 1 {
 		confirmCmd = "kill-session"
 	} else {
-		fallbackID := findFallbackSessionID(sessID, all)
-		confirmCmd = fmt.Sprintf("switch-client -t %s; kill-session -t %s", fallbackID, sessID)
+		fallbackTarget := findFallbackTarget(sessID, all)
+		confirmCmd = fmt.Sprintf("switch-client -t %s; kill-session -t %s", fallbackTarget, sessID)
 	}
 	return tmuxRun("confirm-before", "-p",
 		fmt.Sprintf(" Kill session %q?", sess.Name), confirmCmd)

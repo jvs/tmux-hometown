@@ -504,8 +504,8 @@ func (m Model) handleDelete() (Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
-	fallbackID := findFallbackSessionID(m.session.ID, all)
-	tmuxRun("switch-client", "-t", fallbackID)
+	fallbackTarget := findFallbackTarget(m.session.ID, all)
+	tmuxRun("switch-client", "-t", fallbackTarget)
 	tmuxRun("kill-window", "-t", winID)
 	m.deletedSessionName = sessName
 	return m, nil
@@ -525,18 +525,45 @@ func (m Model) handleDeletedNoticeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-func findFallbackSessionID(currentSessID string, all []Session) string {
-	// Prefer the most-recently-used session.
-	out, err := exec.Command("tmux", "display-message", "-p", "#{client_last_session}").Output()
-	if err == nil {
-		prevName := strings.TrimSpace(string(out))
-		for _, s := range all {
-			if s.ID != currentSessID && s.Name == prevName {
-				return s.ID
-			}
+// findFallbackTarget returns a tmux switch-client target to use when the
+// current session is being killed. Priority:
+//  1. Most recently hometown-visited window in a different slotted session.
+//  2. Any window in a different slotted session (no visit history yet).
+//  3. Any other session (no slots exist at all).
+func findFallbackTarget(currentSessID string, all []Session) string {
+	// Build a set of other sessions that have a slot assigned.
+	slotted := map[string]bool{}
+	for _, s := range all {
+		if s.ID != currentSessID && getSessionSlotKey(s.ID) != "" {
+			slotted[s.ID] = true
 		}
 	}
-	// Fall back to any other session.
+
+	// 1. Most recently visited window in a slotted session.
+	if windows, err := listAllWindowVisits(); err == nil {
+		var best *visitedWindow
+		for i := range windows {
+			w := &windows[i]
+			if w.SessionID == currentSessID || !slotted[w.SessionID] {
+				continue
+			}
+			if best == nil || w.Visited > best.Visited {
+				best = &windows[i]
+			}
+		}
+		if best != nil {
+			return best.SessionID + ":" + best.WindowID
+		}
+	}
+
+	// 2. Any slotted session (visit history unavailable or no slotted windows visited yet).
+	for _, s := range all {
+		if slotted[s.ID] {
+			return s.ID
+		}
+	}
+
+	// 3. Any other session (no slots exist at all).
 	for _, s := range all {
 		if s.ID != currentSessID {
 			return s.ID

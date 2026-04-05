@@ -470,8 +470,8 @@ func (m AllModel) handleDeleteSession() (AllModel, tea.Cmd) {
 		tmuxRun("kill-session", "-t", s.ID)
 		return m, tea.Quit
 	}
-	fallbackID := findFallbackSessionID(s.ID, all)
-	tmuxRun("switch-client", "-t", fallbackID)
+	fallbackTarget := findFallbackTarget(s.ID, all)
+	tmuxRun("switch-client", "-t", fallbackTarget)
 	tmuxRun("kill-session", "-t", s.ID)
 	m.refresh()
 	return m, nil
