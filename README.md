@@ -242,39 +242,40 @@ When the cursor is in the **Session** column, actions operate on the session. Ot
 
 ## Commands
 
-### Navigation
+Running `hometown` with no arguments prints a help summary:
 
-| Command | Description |
-|---------|-------------|
-| `switch-window {h,j,k,l,;}` | Switch to that lane's last window; cycle within the lane if already there; create a window if the lane is empty |
-| `switch-session {h,j,k,l,;}` | Switch to the session assigned to that slot; cycle if multiple; create one if empty |
-| `flip-window` | Toggle back to the previously active window in this session |
-| `flip-session` | Toggle back to the previously active session |
-| `new-window` | Create a new window in the current lane |
-| `kill-window` | Kill the current window (with tmux confirmation prompt) |
-| `kill-session` | Kill the current session (with tmux confirmation prompt) |
+```
+Usage: hometown <command> [args]
 
-### History navigation
+Navigation
+  switch-window <h|j|k|l|;>   Switch to that lane; cycle within it, or create a new window
+  switch-session <h|j|k|l|;>  Switch to that slot; cycle if multiple, or create a new session
+  flip-window                  Toggle back to the previously active window in this session
+  flip-session                 Toggle back to the previously active session
+  new-window                   Create a new window in the current lane
+  kill-window                  Kill the current window (with confirmation)
+  kill-session                 Kill the current session (with confirmation)
+
+History
+  previous-window-in-current-session  Go to the most recently visited other window in this session
+  next-window-in-current-session      Go forward in this session's window history
+  previous-window-in-any-session      Go to the most recently visited other window across all sessions
+  next-window-in-any-session          Go forward in the global window history
+  previous-session                    Go to the most recently visited window in a different session
+  next-session                        Go forward to the next session in history
+
+Popups
+  show-windows   Open (or close) the windows popup
+  show-sessions  Open (or close) the sessions popup
+  show-grid      Open (or close) the grid popup
+  show-state     Open (or close) the state popup (debug view)
+
+Utility
+  record-visit [window-id]  Call from external tools (e.g. fzf switchers) when switching windows outside hometown, so history commands stay accurate
+  version, --version        Show the current version
+```
 
 tmux-hometown tracks the last visit time of each window. The history commands navigate that ordering without recording new visits themselves.
-
-| Command | Description |
-|---------|-------------|
-| `previous-window-in-current-session` | Go to the most recently visited other window in this session |
-| `next-window-in-current-session` | Go forward in this session's window history |
-| `previous-window-in-any-session` | Go to the most recently visited other window across all sessions |
-| `next-window-in-any-session` | Go forward in the global window history |
-| `previous-session` | Go to the most recently visited window in a different session |
-| `next-session` | Go forward to the next session in history |
-
-### Popups
-
-| Command | Description |
-|---------|-------------|
-| `show-windows` | Open (or close) the windows popup |
-| `show-sessions` | Open (or close) the sessions popup |
-| `show-grid` | Open (or close) the grid popup |
-| `show-state` | Open (or close) the state popup (debug view) |
 
 All popups toggle: running the command while the popup is open closes it.
 

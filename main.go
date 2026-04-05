@@ -18,14 +18,7 @@ func main() {
 	}
 
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "Usage: hometown <command> [args]")
-		fmt.Fprintln(os.Stderr, "Commands: switch-window, switch-session, flip-window, flip-session,")
-		fmt.Fprintln(os.Stderr, "          show-windows, show-sessions, show-grid,")
-		fmt.Fprintln(os.Stderr, "          new-window, kill-window, kill-session,")
-		fmt.Fprintln(os.Stderr, "          previous-session, next-session,")
-		fmt.Fprintln(os.Stderr, "          previous-window-in-current-session, next-window-in-current-session,")
-		fmt.Fprintln(os.Stderr, "          previous-window-in-any-session, next-window-in-any-session,")
-		fmt.Fprintln(os.Stderr, "          record-visit, show-state")
+		printUsage()
 		os.Exit(1)
 	}
 
@@ -184,6 +177,88 @@ func main() {
 	default:
 		die("unknown command: %s", cmd)
 	}
+}
+
+func printUsage() {
+	type entry struct {
+		name string
+		desc string
+	}
+	type group struct {
+		title   string
+		entries []entry
+	}
+
+	// Keep the Commands section in README.md in sync with this list.
+	groups := []group{
+		{
+			"Navigation",
+			[]entry{
+				{"switch-window <h|j|k|l|;>", "Switch to that lane; cycle within it, or create a new window"},
+				{"switch-session <h|j|k|l|;>", "Switch to that slot; cycle if multiple, or create a new session"},
+				{"flip-window", "Toggle back to the previously active window in this session"},
+				{"flip-session", "Toggle back to the previously active session"},
+				{"new-window", "Create a new window in the current lane"},
+				{"kill-window", "Kill the current window (with confirmation)"},
+				{"kill-session", "Kill the current session (with confirmation)"},
+			},
+		},
+		{
+			"History",
+			[]entry{
+				{"previous-window-in-current-session", "Go to the most recently visited other window in this session"},
+				{"next-window-in-current-session", "Go forward in this session's window history"},
+				{"previous-window-in-any-session", "Go to the most recently visited other window across all sessions"},
+				{"next-window-in-any-session", "Go forward in the global window history"},
+				{"previous-session", "Go to the most recently visited window in a different session"},
+				{"next-session", "Go forward to the next session in history"},
+			},
+		},
+		{
+			"Popups",
+			[]entry{
+				{"show-windows", "Open (or close) the windows popup"},
+				{"show-sessions", "Open (or close) the sessions popup"},
+				{"show-grid", "Open (or close) the grid popup"},
+				{"show-state", "Open (or close) the state popup (debug view)"},
+			},
+		},
+		{
+			"Utility",
+			[]entry{
+				{"record-visit [window-id]", "Tell hometown a window was visited (call from other tools, e.g. fzf switchers, so history commands stay accurate)"},
+				{"version, --version", "Show the current version"},
+			},
+		},
+	}
+
+	const (
+		bold  = "\033[1m"
+		cyan  = "\033[36m"
+		dim   = "\033[2m"
+		reset = "\033[0m"
+	)
+
+	fmt.Fprintf(os.Stderr, "\n%sUsage:%s hometown <command> [args]\n", bold, reset)
+
+	for _, g := range groups {
+		fmt.Fprintf(os.Stderr, "\n%s%s%s\n", bold+cyan, g.title, reset)
+
+		maxWidth := 0
+		for _, e := range g.entries {
+			if len(e.name) > maxWidth {
+				maxWidth = len(e.name)
+			}
+		}
+
+		for _, e := range g.entries {
+			pad := strings.Repeat(" ", maxWidth-len(e.name))
+			fmt.Fprintf(os.Stderr, "  %s%s%s%s  %s%s%s\n",
+				bold, e.name, reset, pad,
+				dim, e.desc, reset)
+		}
+	}
+	fmt.Fprintln(os.Stderr)
 }
 
 func die(format string, args ...any) {
