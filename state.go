@@ -207,6 +207,7 @@ func buildStateLines() []string {
 		"#{session_id}\t#{window_id}\t#{@hometown_lane}\t#{@hometown_visited}\t#{@hometown_lane_never}\t#{window_name}",
 	).Output()
 	if err == nil {
+		const sessNameColW = 22
 		prevSess := ""
 		for _, p := range splitTabLines(string(out), 6) {
 			sessID, winID, lane, visited, laneNever, name := p[0], p[1], p[2], p[3], p[4], p[5]
@@ -215,12 +216,17 @@ func buildStateLines() []string {
 					lines = append(lines, "")
 				}
 				prevSess = sessID
-				sessLabel := sessID
-				if n, ok := sessNames[sessID]; ok {
-					sessLabel += "  " + n
-				}
+				sessName := sessNames[sessID]
+				var sessLabel string
 				if slot := sessSlots[sessID]; slot != "" {
-					sessLabel += "  [" + slotDisplayNames[slot] + "]"
+					slotStr := "  Slot " + slotDisplayNames[slot]
+					if len([]rune(sessName)) <= sessNameColW {
+						sessLabel = fmt.Sprintf("%-6s  %-*s%s", sessID, sessNameColW, sessName, slotStr)
+					} else {
+						sessLabel = fmt.Sprintf("%-6s  %s%s", sessID, sessName, slotStr)
+					}
+				} else {
+					sessLabel = fmt.Sprintf("%-6s  %s", sessID, sessName)
 				}
 				lines = append(lines, "   "+dimStyle.Render(sessLabel))
 			}
