@@ -244,20 +244,44 @@ func (m SlotsModel) handleKey(msg tea.KeyMsg) (SlotsModel, tea.Cmd) {
 		}
 		return m, m.switchToCurrentCmd()
 
+	case "j":
+		sessions := m.slots[slotKeys[m.colSlot]]
+		if m.colRow < len(sessions)-1 {
+			m.colRow++
+		} else if m.colSlot < len(slotKeys)-1 {
+			m.colSlot++
+			m.colRow = 0
+		}
+		return m, m.switchToCurrentCmd()
+
 	case "up":
 		if m.colRow > 0 {
 			m.colRow--
 		}
 		return m, m.switchToCurrentCmd()
 
-	case "right":
+	case "k":
+		if m.colRow > 0 {
+			m.colRow--
+		} else if m.colSlot > 0 {
+			m.colSlot--
+			sessions := m.slots[slotKeys[m.colSlot]]
+			if len(sessions) > 0 {
+				m.colRow = len(sessions) - 1
+			} else {
+				m.colRow = 0
+			}
+		}
+		return m, m.switchToCurrentCmd()
+
+	case "right", "l":
 		if m.colSlot < len(slotKeys)-1 {
 			m.colSlot++
 			m.clampColRow()
 		}
 		return m, m.switchToCurrentCmd()
 
-	case "left":
+	case "left", "h":
 		if m.colSlot > 0 {
 			m.colSlot--
 			m.clampColRow()
@@ -265,19 +289,18 @@ func (m SlotsModel) handleKey(msg tea.KeyMsg) (SlotsModel, tea.Cmd) {
 		return m, m.switchToCurrentCmd()
 	}
 
-	// Shift+key: switch to that slot and show its lanes.
-	if laneIdx, ok := laneKeyLane[msg.String()]; ok && laneKeyShift[msg.String()] {
-		slotKey := slotKeys[laneIdx]
-		if m.commandFile != "" {
-			exe, _ := os.Executable()
-			content := exe + " switch-session-and-show-lanes " + slotKey + "\n"
-			os.WriteFile(m.commandFile, []byte(content), 0644)
-		}
-		return m, tea.Quit
+	// alt+hjkl/;, alt+shift+hjkl/:, or shift+hjkl/: — jump to that slot column (or cycle within if already there).
+	slotLaneIdx, ok := altLaneKeyLane[msg.String()]
+	if !ok {
+		slotLaneIdx, ok = altShiftLaneKeyLane[msg.String()]
 	}
-
-	// Slot keys: h/j/k/l/; jump to that column (or cycle within if already there).
-	if laneIdx, ok := laneKeyLane[msg.String()]; ok {
+	if !ok {
+		if idx, found := laneKeyLane[msg.String()]; found && laneKeyShift[msg.String()] {
+			slotLaneIdx, ok = idx, true
+		}
+	}
+	if ok {
+		laneIdx := slotLaneIdx
 		if m.colSlot == laneIdx {
 			sessions := m.slots[slotKeys[laneIdx]]
 			if n := len(sessions); n > 0 {

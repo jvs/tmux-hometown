@@ -185,25 +185,25 @@ func (m AllModel) handleKey(msg tea.KeyMsg) (AllModel, tea.Cmd) {
 		tmuxRun("switch-client", "-t", m.initialSessID+":"+m.initialWinID)
 		return m, tea.Quit
 
-	case "up":
+	case "up", "k":
 		if m.curRow > 0 {
 			m.curRow--
 		}
 		return m, m.switchToCurrentCmd()
 
-	case "down":
+	case "down", "j":
 		if m.curRow < len(m.rows)-1 {
 			m.curRow++
 		}
 		return m, m.switchToCurrentCmd()
 
-	case "left":
+	case "left", "h":
 		if m.curCol > 0 {
 			m.curCol--
 		}
 		return m, m.switchToCurrentCmd()
 
-	case "right":
+	case "right", "l":
 		if m.curCol < allColSC {
 			m.curCol++
 		}
@@ -239,14 +239,14 @@ func (m AllModel) handleKey(msg tea.KeyMsg) (AllModel, tea.Cmd) {
 		return m.handlePaste()
 	}
 
-	// h/j/k/l/; — jump to that window column.
-	if laneIdx, ok := laneKeyLane[msg.String()]; ok && !laneKeyShift[msg.String()] {
+	// alt+hjkl/; — jump to that window column.
+	if laneIdx, ok := altLaneKeyLane[msg.String()]; ok {
 		m.curCol = laneIdx + 1
 		return m, m.switchToCurrentCmd()
 	}
 
-	// H/J/K/L/: — jump to that slot row.
-	if laneIdx, ok := laneKeyLane[msg.String()]; ok && laneKeyShift[msg.String()] {
+	// alt+shift+hjkl/: — jump to that slot row.
+	if laneIdx, ok := altShiftLaneKeyLane[msg.String()]; ok {
 		m.curRow = laneIdx
 		return m, m.switchToCurrentCmd()
 	}

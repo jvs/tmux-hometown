@@ -38,6 +38,16 @@ var laneKeyShift = map[string]bool{
 	"H": true, "J": true, "K": true, "L": true, ":": true,
 }
 
+// altLaneKeyLane maps alt+h/j/k/l/; to their lane/slot index (0–4).
+var altLaneKeyLane = map[string]int{
+	"alt+h": 0, "alt+j": 1, "alt+k": 2, "alt+l": 3, "alt+;": 4,
+}
+
+// altShiftLaneKeyLane maps alt+H/J/K/L/: to their lane/slot index (0–4).
+var altShiftLaneKeyLane = map[string]int{
+	"alt+H": 0, "alt+J": 1, "alt+K": 2, "alt+L": 3, "alt+:": 4,
+}
+
 type Model struct {
 	session Session
 	windows []Window
@@ -278,20 +288,44 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, m.switchToCurrentCmd()
 
+	case "j":
+		windows := m.lanes[laneOrder[m.colLane]]
+		if m.colWindow < len(windows)-1 {
+			m.colWindow++
+		} else if m.colLane < len(laneOrder)-1 {
+			m.colLane++
+			m.colWindow = 0
+		}
+		return m, m.switchToCurrentCmd()
+
 	case "up":
 		if m.colWindow > 0 {
 			m.colWindow--
 		}
 		return m, m.switchToCurrentCmd()
 
-	case "right":
+	case "k":
+		if m.colWindow > 0 {
+			m.colWindow--
+		} else if m.colLane > 0 {
+			m.colLane--
+			windows := m.lanes[laneOrder[m.colLane]]
+			if len(windows) > 0 {
+				m.colWindow = len(windows) - 1
+			} else {
+				m.colWindow = 0
+			}
+		}
+		return m, m.switchToCurrentCmd()
+
+	case "right", "l":
 		if m.colLane < len(laneOrder)-1 {
 			m.colLane++
 			m.clampColWindow()
 		}
 		return m, m.switchToCurrentCmd()
 
-	case "left":
+	case "left", "h":
 		if m.colLane > 0 {
 			m.colLane--
 			m.clampColWindow()
@@ -299,19 +333,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, m.switchToCurrentCmd()
 	}
 
-	// Shift+key: switch to that slot and reopen the lanes view for it.
-	if laneIdx, ok := laneKeyLane[msg.String()]; ok && laneKeyShift[msg.String()] {
-		slotKey := laneOrder[laneIdx]
-		if m.commandFile != "" {
-			exe, _ := os.Executable()
-			content := exe + " switch-session-and-show-lanes " + slotKey + "\n"
-			os.WriteFile(m.commandFile, []byte(content), 0644)
-		}
-		return m, tea.Quit
+	// alt+hjkl/;, alt+shift+hjkl/:, or shift+hjkl/: — jump to that lane (or cycle if already there).
+	laneIdx, ok := altLaneKeyLane[msg.String()]
+	if !ok {
+		laneIdx, ok = altShiftLaneKeyLane[msg.String()]
 	}
-
-	// Lane keys: h/j/k/l/; jump to that lane (or cycle if already there).
-	if laneIdx, ok := laneKeyLane[msg.String()]; ok {
+	if !ok {
+		if idx, found := laneKeyLane[msg.String()]; found && laneKeyShift[msg.String()] {
+			laneIdx, ok = idx, true
+		}
+	}
+	if ok {
 		if m.colLane == laneIdx {
 			windows := m.lanes[laneOrder[laneIdx]]
 			if n := len(windows); n > 0 {
