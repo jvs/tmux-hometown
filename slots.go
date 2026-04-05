@@ -101,7 +101,6 @@ func newSlotSession(key string) (string, error) {
 		winID := strings.TrimSpace(string(winOut))
 		if winID != "" {
 			exec.Command("tmux", "set-window-option", "-t", winID, "@lane", "j").Run()
-			exec.Command("tmux", "set-option", "-t", sessID, "@lane_j_window", winID).Run()
 		}
 	}
 	return sessID, nil

@@ -335,9 +335,6 @@ func cmdSwitchLane(key string) error {
 	currentLane := getCurrentLane()
 	currentLaneIsDefault := tmuxGetCurrentWindowOption("@lane") == ""
 
-	// Save current window for the current lane before doing anything.
-	tmuxSetSessionOption(sessID, "@lane_"+currentLane+"_window", curWinID)
-
 	// If the current window has no @lane set, assign it now.
 	if currentLaneIsDefault {
 		tmuxRun("set-window-option", "-t", curWinID, "@lane", currentLane)
@@ -353,7 +350,6 @@ func cmdSwitchLane(key string) error {
 		idx := indexByID(laneWins, curWinID)
 		nextIdx := (idx + 1) % len(laneWins)
 		nextWin := laneWins[nextIdx]
-		tmuxSetSessionOption(sessID, "@lane_"+key+"_window", nextWin.ID)
 		if err := tmuxRun("select-window", "-t", nextWin.ID); err != nil {
 			return err
 		}
@@ -364,12 +360,12 @@ func cmdSwitchLane(key string) error {
 	// Switching to a different lane.
 	tmuxSetSessionOption(sessID, "@hometown_flip_window", currentLane)
 
-	targetWinID := tmuxGetSessionOption(sessID, "@lane_"+key+"_window")
-	if targetWinID != "" && windowExists(targetWinID) {
-		if err := tmuxRun("select-window", "-t", targetWinID); err != nil {
+	windows, _ := loadWindows(sessID)
+	if target := mostRecentWindowInLane(windows, key); target != nil {
+		if err := tmuxRun("select-window", "-t", target.ID); err != nil {
 			return err
 		}
-		recordWindowVisit(targetWinID)
+		recordWindowVisit(target.ID)
 		return nil
 	}
 
@@ -382,13 +378,12 @@ func cmdSwitchLane(key string) error {
 	}
 	newWinID := strings.TrimSpace(string(out))
 	tmuxRun("set-window-option", "-t", newWinID, "@lane", key)
-	tmuxSetSessionOption(sessID, "@lane_"+key+"_window", newWinID)
 	recordWindowVisit(newWinID)
 	return nil
 }
 
 func cmdFlipWindow() error {
-	sessID, curWinID, err := getCurrentSessionAndWindow()
+	sessID, _, err := getCurrentSessionAndWindow()
 	if err != nil {
 		return err
 	}
@@ -400,18 +395,16 @@ func cmdFlipWindow() error {
 		return tmuxRun("display-message", "No flip window")
 	}
 
-	// Save current window and swap prev/current.
-	tmuxSetSessionOption(sessID, "@lane_"+currentLane+"_window", curWinID)
 	tmuxSetSessionOption(sessID, "@hometown_flip_window", currentLane)
 
 	tmuxRun("display-message", "[ Window "+laneDisplayLabel(prevLane)+" ]")
 
-	targetWinID := tmuxGetSessionOption(sessID, "@lane_"+prevLane+"_window")
-	if targetWinID != "" && windowExists(targetWinID) {
-		if err := tmuxRun("select-window", "-t", targetWinID); err != nil {
+	windows, _ := loadWindows(sessID)
+	if target := mostRecentWindowInLane(windows, prevLane); target != nil {
+		if err := tmuxRun("select-window", "-t", target.ID); err != nil {
 			return err
 		}
-		recordWindowVisit(targetWinID)
+		recordWindowVisit(target.ID)
 		return nil
 	}
 
@@ -424,17 +417,11 @@ func cmdFlipWindow() error {
 	}
 	newWinID := strings.TrimSpace(string(out))
 	tmuxRun("set-window-option", "-t", newWinID, "@lane", prevLane)
-	tmuxSetSessionOption(sessID, "@lane_"+prevLane+"_window", newWinID)
 	recordWindowVisit(newWinID)
 	return nil
 }
 
 func cmdNewWindow() error {
-	sessID, _, err := getCurrentSessionAndWindow()
-	if err != nil {
-		return err
-	}
-
 	// Read current lane BEFORE creating the new window (after creation the
 	// active window changes).
 	currentLane := getCurrentLane()
@@ -447,7 +434,6 @@ func cmdNewWindow() error {
 	}
 	newWinID := strings.TrimSpace(string(out))
 	tmuxRun("set-window-option", "-t", newWinID, "@lane", currentLane)
-	tmuxSetSessionOption(sessID, "@lane_"+currentLane+"_window", newWinID)
 	recordWindowVisit(newWinID)
 	return nil
 }
@@ -465,7 +451,7 @@ func cmdKillWindow() error {
 
 // buildKillWindowConfirmCmd returns the tmux command string to run when the
 // user confirms a kill-window. It picks the safest switch target:
-//  1. Another window in the same lane (also updates @lane_X_window).
+//  1. Another window in the same lane.
 //  2. Any other window in the session.
 //  3. Another session entirely (when this is the last window).
 //  4. No switch needed (only session — tmux will exit).
@@ -473,8 +459,8 @@ func buildKillWindowConfirmCmd(sessID, curWinID, currentLane string, windows []W
 	for _, w := range filterByLane(windows, currentLane) {
 		if w.ID != curWinID {
 			return fmt.Sprintf(
-				"kill-window; select-window -t %s; set-option @lane_%s_window %s",
-				w.ID, currentLane, w.ID)
+				"kill-window; select-window -t %s",
+				w.ID)
 		}
 	}
 	for _, w := range windows {

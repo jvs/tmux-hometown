@@ -196,18 +196,24 @@ func getCurrentLane() string {
 	return lane
 }
 
-// windowExists checks whether winID exists in the current session.
-func windowExists(winID string) bool {
-	out, err := exec.Command("tmux", "list-windows", "-F", "#{window_id}").Output()
-	if err != nil {
-		return false
+// mostRecentWindowInLane returns the window in the given lane with the highest
+// @hometown_visited timestamp. Falls back to the first window in the lane when
+// none have a visit record. Returns nil if the lane has no windows.
+func mostRecentWindowInLane(windows []Window, lane string) *Window {
+	laneWins := filterByLane(windows, lane)
+	if len(laneWins) == 0 {
+		return nil
 	}
-	for _, line := range strings.Split(string(out), "\n") {
-		if strings.TrimSpace(line) == winID {
-			return true
+	best := &laneWins[0]
+	bestTS := getWindowVisitTS(laneWins[0].ID)
+	for i := 1; i < len(laneWins); i++ {
+		ts := getWindowVisitTS(laneWins[i].ID)
+		if ts > bestTS {
+			bestTS = ts
+			best = &laneWins[i]
 		}
 	}
-	return false
+	return best
 }
 
 // sessionExists checks whether a session ID exists.
