@@ -206,10 +206,16 @@ func (m Model) handlePromptKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		tmuxRun("set-window-option", "-t", m.initialWinID, "@hometown_lane_never", "1")
 		m.promptMode = false
 		return m, nil
-	case "esc", "alt+u":
+	case "esc":
 		tmuxRun("switch-client", "-t", m.session.ID+":"+m.initialWinID)
 		return m, tea.Quit
-	case "alt+o", "alt+U":
+	}
+	key := msg.String()
+	if key == "alt+"+m.activationKey {
+		tmuxRun("switch-client", "-t", m.session.ID+":"+m.initialWinID)
+		return m, tea.Quit
+	}
+	if key == "alt+o" || key == "alt+"+m.shiftActivationKey {
 		if m.commandFile != "" {
 			exe, _ := os.Executable()
 			os.WriteFile(m.commandFile, []byte(exe+" show-sessions\n"), 0644)
@@ -217,13 +223,13 @@ func (m Model) handlePromptKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	// Activation key / tab: cycle through popups.
-	if key := msg.String(); key == m.activationKey || key == "tab" {
+	if key == m.activationKey || key == "tab" {
 		return m, cyclePopup("windows", m.cyclePattern, m.commandFile, true)
 	}
-	if key := msg.String(); key == m.shiftActivationKey || key == "shift+tab" {
+	if key == m.shiftActivationKey || key == "shift+tab" {
 		return m, cyclePopup("windows", m.cyclePattern, m.commandFile, false)
 	}
-	if laneIdx, ok := laneKeyLane[msg.String()]; ok && !laneKeyShift[msg.String()] {
+	if laneIdx, ok := laneKeyLane[key]; ok && !laneKeyShift[key] {
 		tmuxRun("set-window-option", "-t", m.initialWinID, "@hometown_lane", storeIndex(laneIdx))
 		m.refresh()
 		m.positionOnWindow(m.initialWinID)
@@ -244,15 +250,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, tea.Quit
 
-	case "esc", "alt+u":
+	case "esc":
 		tmuxRun("switch-client", "-t", m.session.ID+":"+m.initialWinID)
-		return m, tea.Quit
-
-	case "alt+o", "alt+U":
-		if m.commandFile != "" {
-			exe, _ := os.Executable()
-			os.WriteFile(m.commandFile, []byte(exe+" show-sessions\n"), 0644)
-		}
 		return m, tea.Quit
 
 	case "a":
@@ -349,19 +348,31 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, m.switchToCurrentCmd()
 	}
 
+	key := msg.String()
+	if key == "alt+"+m.activationKey {
+		tmuxRun("switch-client", "-t", m.session.ID+":"+m.initialWinID)
+		return m, tea.Quit
+	}
+	if key == "alt+o" || key == "alt+"+m.shiftActivationKey {
+		if m.commandFile != "" {
+			exe, _ := os.Executable()
+			os.WriteFile(m.commandFile, []byte(exe+" show-sessions\n"), 0644)
+		}
+		return m, tea.Quit
+	}
 	// Activation key / tab: cycle through popups.
-	if key := msg.String(); key == m.activationKey || key == "tab" {
+	if key == m.activationKey || key == "tab" {
 		return m, cyclePopup("windows", m.cyclePattern, m.commandFile, true)
 	}
-	if key := msg.String(); key == m.shiftActivationKey || key == "shift+tab" {
+	if key == m.shiftActivationKey || key == "shift+tab" {
 		return m, cyclePopup("windows", m.cyclePattern, m.commandFile, false)
 	}
-	laneIdx, ok := altLaneKeyLane[msg.String()]
+	laneIdx, ok := altLaneKeyLane[key]
 	if !ok {
-		laneIdx, ok = altShiftLaneKeyLane[msg.String()]
+		laneIdx, ok = altShiftLaneKeyLane[key]
 	}
 	if !ok {
-		if idx, found := laneKeyLane[msg.String()]; found && laneKeyShift[msg.String()] {
+		if idx, found := laneKeyLane[key]; found && laneKeyShift[key] {
 			laneIdx, ok = idx, true
 		}
 	}

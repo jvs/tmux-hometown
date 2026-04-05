@@ -149,12 +149,26 @@ func (m SlotsModel) handlePromptKey(msg tea.KeyMsg) (SlotsModel, tea.Cmd) {
 		tmuxSetSessionOption(m.initialSessID, "@hometown_slot_never", "1")
 		m.promptMode = false
 		return m, nil
-	case "esc", "alt+U":
+	case "esc":
 		if m.initialSessID != "" {
 			tmuxRun("switch-client", "-t", m.initialSessID)
 		}
 		return m, tea.Quit
-	case "alt+u", "shift+enter":
+	case "shift+enter":
+		if m.commandFile != "" {
+			exe, _ := os.Executable()
+			os.WriteFile(m.commandFile, []byte(exe+" show-windows\n"), 0644)
+		}
+		return m, tea.Quit
+	}
+	key := msg.String()
+	if key == "alt+"+m.shiftActivationKey {
+		if m.initialSessID != "" {
+			tmuxRun("switch-client", "-t", m.initialSessID)
+		}
+		return m, tea.Quit
+	}
+	if key == "alt+"+m.activationKey {
 		if m.commandFile != "" {
 			exe, _ := os.Executable()
 			os.WriteFile(m.commandFile, []byte(exe+" show-windows\n"), 0644)
@@ -162,15 +176,15 @@ func (m SlotsModel) handlePromptKey(msg tea.KeyMsg) (SlotsModel, tea.Cmd) {
 		return m, tea.Quit
 	}
 	// Activation key / tab: cycle through popups.
-	if key := msg.String(); key == m.activationKey || key == "tab" {
+	if key == m.activationKey || key == "tab" {
 		return m, cyclePopup("sessions", m.cyclePattern, m.commandFile, true)
 	}
-	if key := msg.String(); key == m.shiftActivationKey || key == "shift+tab" {
+	if key == m.shiftActivationKey || key == "shift+tab" {
 		return m, cyclePopup("sessions", m.cyclePattern, m.commandFile, false)
 	}
 	// h/j/k/l/; assign the selected key to the current session.
-	for i, key := range slotKeys {
-		if msg.String() == key {
+	for i, sKey := range slotKeys {
+		if key == sKey {
 			setSessionSlotKey(m.initialSessID, i)
 			m.slots = groupBySlot()
 			m.positionOnSession(m.initialSessID)
@@ -192,13 +206,13 @@ func (m SlotsModel) handleKey(msg tea.KeyMsg) (SlotsModel, tea.Cmd) {
 		}
 		return m, tea.Quit
 
-	case "esc", "alt+U":
+	case "esc":
 		if m.initialSessID != "" {
 			tmuxRun("switch-client", "-t", m.initialSessID)
 		}
 		return m, tea.Quit
 
-	case "alt+u", "shift+enter":
+	case "shift+enter":
 		if m.commandFile != "" {
 			exe, _ := os.Executable()
 			os.WriteFile(m.commandFile, []byte(exe+" show-windows\n"), 0644)
@@ -303,21 +317,35 @@ func (m SlotsModel) handleKey(msg tea.KeyMsg) (SlotsModel, tea.Cmd) {
 		return m, m.switchToCurrentCmd()
 	}
 
+	key := msg.String()
+	if key == "alt+"+m.shiftActivationKey {
+		if m.initialSessID != "" {
+			tmuxRun("switch-client", "-t", m.initialSessID)
+		}
+		return m, tea.Quit
+	}
+	if key == "alt+"+m.activationKey {
+		if m.commandFile != "" {
+			exe, _ := os.Executable()
+			os.WriteFile(m.commandFile, []byte(exe+" show-windows\n"), 0644)
+		}
+		return m, tea.Quit
+	}
 	// Activation key / tab: cycle through popups.
-	if key := msg.String(); key == m.activationKey || key == "tab" {
+	if key == m.activationKey || key == "tab" {
 		return m, cyclePopup("sessions", m.cyclePattern, m.commandFile, true)
 	}
-	if key := msg.String(); key == m.shiftActivationKey || key == "shift+tab" {
+	if key == m.shiftActivationKey || key == "shift+tab" {
 		return m, cyclePopup("sessions", m.cyclePattern, m.commandFile, false)
 	}
 
 	// alt+hjkl/;, alt+shift+hjkl/:, or shift+hjkl/: — jump to that slot column (or cycle within if already there).
-	slotLaneIdx, ok := altLaneKeyLane[msg.String()]
+	slotLaneIdx, ok := altLaneKeyLane[key]
 	if !ok {
-		slotLaneIdx, ok = altShiftLaneKeyLane[msg.String()]
+		slotLaneIdx, ok = altShiftLaneKeyLane[key]
 	}
 	if !ok {
-		if idx, found := laneKeyLane[msg.String()]; found && laneKeyShift[msg.String()] {
+		if idx, found := laneKeyLane[key]; found && laneKeyShift[key] {
 			slotLaneIdx, ok = idx, true
 		}
 	}
