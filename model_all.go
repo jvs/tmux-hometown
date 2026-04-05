@@ -13,14 +13,9 @@ import (
 
 // ── Column indices ────────────────────────────────────────────────────────────
 
-const (
-	allColSession = 0
-	allColH       = 1 // laneOrder[allColH-1] == "h"
-	allColJ       = 2
-	allColK       = 3
-	allColL       = 4
-	allColSC      = 5
-)
+// allColSession is the column index for the session name column in the grid.
+// Window lane columns are 1..len(laneOrder).
+const allColSession = 0
 
 // Fixed widths for the key and session columns.
 const (
@@ -38,9 +33,9 @@ var (
 // allRow holds one row of the show-grid table: one slot and the
 // first window in each lane for the primary session assigned to that slot.
 type allRow struct {
-	slotKey string
-	sess    *Session          // nil when the slot is empty
-	windows map[string]Window // lane key → first window in that lane
+	slotKey int
+	sess    *Session       // nil when the slot is empty
+	windows map[int]Window // lane index → first window in that lane
 }
 
 // AllModel is the TUI model for show-grid.
@@ -76,18 +71,18 @@ type AllModel struct {
 func loadAllRows() []allRow {
 	slots := groupBySlot()
 	rows := make([]allRow, len(slotKeys))
-	for i, key := range slotKeys {
+	for i := range slotKeys {
 		row := allRow{
-			slotKey: key,
-			windows: make(map[string]Window),
+			slotKey: i,
+			windows: make(map[int]Window),
 		}
-		sessions := slots[key]
+		sessions := slots[i]
 		if len(sessions) > 0 {
 			s := sessions[0]
 			row.sess = &s
 			wins, _ := loadWindows(s.ID)
 			for _, w := range wins {
-				if w.Lane != "" {
+				if w.Lane >= 0 {
 					if _, exists := row.windows[w.Lane]; !exists {
 						row.windows[w.Lane] = w
 					}
@@ -114,14 +109,7 @@ func newAllModel(initialSessID, initialWinID, commandFile, activationKey, shiftA
 	for i, row := range m.rows {
 		if row.sess != nil && row.sess.ID == initialSessID {
 			m.curRow = i
-			// Position on the column matching the current window's lane.
-			curLane := getCurrentLane()
-			for laneIdx, laneKey := range laneOrder {
-				if laneKey == curLane {
-					m.curCol = laneIdx + 1
-					break
-				}
-			}
+			m.curCol = getCurrentLane() + 1
 			break
 		}
 	}
@@ -210,7 +198,7 @@ func (m AllModel) handleKey(msg tea.KeyMsg) (AllModel, tea.Cmd) {
 		return m, m.switchToCurrentCmd()
 
 	case "right", "l":
-		if m.curCol < allColSC {
+		if m.curCol < len(laneOrder) {
 			m.curCol++
 		}
 		return m, m.switchToCurrentCmd()
@@ -334,16 +322,16 @@ func (m AllModel) handleAdd(name string) (AllModel, tea.Cmd) {
 }
 
 func (m AllModel) handleAddSession(name string) (AllModel, tea.Cmd) {
-	key := slotKeys[m.curRow]
+	key := m.curRow // slot index
 	if m.commandFile != "" {
 		exe, _ := os.Executable()
 		content := fmt.Sprintf(
 			"NEWSESS=$(tmux new-session -d -s %s -P -F '#{session_id}' 2>/dev/null || tmux new-session -d -P -F '#{session_id}')\n"+
-				"tmux set-option -t \"$NEWSESS\" @hometown_slot %s\n",
-			"NEWWIN=$(tmux display-message -t \"$NEWSESS\" -p '#{window_id}')\n"+
+				"tmux set-option -t \"$NEWSESS\" @hometown_slot %s\n"+
+				"NEWWIN=$(tmux display-message -t \"$NEWSESS\" -p '#{window_id}')\n"+
 				"%s record-window-visit \"$NEWWIN\"\n"+
 				"%s show-grid\n",
-			shellSingleQuote(name), key, exe, exe)
+			shellSingleQuote(name), storeIndex(key), exe, exe)
 		os.WriteFile(m.commandFile, []byte(content), 0644)
 		return m, tea.Quit
 	}
@@ -366,7 +354,7 @@ func (m AllModel) handleAddWindow(name string) (AllModel, tea.Cmd) {
 	if row.sess == nil {
 		return m, nil
 	}
-	laneKey := laneOrder[m.curCol-1]
+	laneKey := m.curCol - 1 // lane index
 	wins, _ := loadWindows(row.sess.ID)
 
 	// Insert after the last window in the target lane, or after the last
@@ -390,10 +378,10 @@ func (m AllModel) handleAddWindow(name string) (AllModel, tea.Cmd) {
 		exe, _ := os.Executable()
 		content := fmt.Sprintf(
 			"NEWWIN=$(tmux new-window -%s -t '%s' -n %s -c '#{pane_current_path}' -P -F '#{window_id}')\n"+
-				"tmux set-window-option -t \"$NEWWIN\" @hometown_lane '%s'\n"+
+				"tmux set-window-option -t \"$NEWWIN\" @hometown_lane %s\n"+
 				"%s record-window-visit \"$NEWWIN\"\n"+
 				"%s show-grid\n",
-			position, targetID, shellSingleQuote(name), laneKey, exe, exe)
+			position, targetID, shellSingleQuote(name), storeIndex(laneKey), exe, exe)
 		os.WriteFile(m.commandFile, []byte(content), 0644)
 		return m, tea.Quit
 	}
@@ -404,7 +392,7 @@ func (m AllModel) handleAddWindow(name string) (AllModel, tea.Cmd) {
 		"-P", "-F", "#{window_id}").Output()
 	if err == nil {
 		newWinID := strings.TrimSpace(string(out))
-		tmuxRun("set-window-option", "-t", newWinID, "@hometown_lane", laneKey)
+		tmuxRun("set-window-option", "-t", newWinID, "@hometown_lane", storeIndex(laneKey))
 		recordWindowVisit(newWinID)
 	}
 	m.refresh()
@@ -412,22 +400,22 @@ func (m AllModel) handleAddWindow(name string) (AllModel, tea.Cmd) {
 }
 
 func (m AllModel) handleEnterEmptySessionWindow() (AllModel, tea.Cmd) {
-	slotKey := slotKeys[m.curRow]
-	laneKey := laneOrder[m.curCol-1]
-	sessName := "Session " + slotSessionNames[slotKey]
-	winName := "Window " + laneDisplayNames[laneKey]
+	slotKey := m.rows[m.curRow].slotKey
+	laneKey := m.curCol - 1
+	sessName := "Session " + indexName(slotKey)
+	winName := "Window " + indexName(laneKey)
 
 	if m.commandFile != "" {
 		exe, _ := os.Executable()
 		content := fmt.Sprintf(
 			"NEWSESS=$(tmux new-session -d -s %s -P -F '#{session_id}' 2>/dev/null || tmux new-session -d -P -F '#{session_id}')\n"+
-				"tmux set-option -t \"$NEWSESS\" @hometown_slot %s\n",
-			"NEWWIN=$(tmux display-message -t \"$NEWSESS\" -p '#{window_id}')\n"+
+				"tmux set-option -t \"$NEWSESS\" @hometown_slot %s\n"+
+				"NEWWIN=$(tmux display-message -t \"$NEWSESS\" -p '#{window_id}')\n"+
 				"tmux rename-window -t \"$NEWWIN\" %s\n"+
-				"tmux set-window-option -t \"$NEWWIN\" @hometown_lane '%s'\n"+
+				"tmux set-window-option -t \"$NEWWIN\" @hometown_lane %s\n"+
 				"%s record-window-visit \"$NEWWIN\"\n"+
 				"tmux switch-client -t \"$NEWSESS\"\n",
-			shellSingleQuote(sessName), slotKey, shellSingleQuote(winName), laneKey, exe)
+			shellSingleQuote(sessName), storeIndex(slotKey), shellSingleQuote(winName), storeIndex(laneKey), exe)
 		os.WriteFile(m.commandFile, []byte(content), 0644)
 		return m, tea.Quit
 	}
@@ -444,7 +432,7 @@ func (m AllModel) handleEnterEmptySessionWindow() (AllModel, tea.Cmd) {
 	winOut, _ := exec.Command("tmux", "list-windows", "-t", newSessID, "-F", "#{window_id}").Output()
 	if winID := strings.TrimSpace(string(winOut)); winID != "" {
 		tmuxRun("rename-window", "-t", winID, winName)
-		tmuxRun("set-window-option", "-t", winID, "@hometown_lane", laneKey)
+		tmuxRun("set-window-option", "-t", winID, "@hometown_lane", storeIndex(laneKey))
 		recordWindowVisit(winID)
 	}
 	tmuxRun("switch-client", "-t", newSessID)
@@ -549,13 +537,12 @@ func (m AllModel) handleCut() (AllModel, tea.Cmd) {
 
 func (m AllModel) handlePaste() (AllModel, tea.Cmd) {
 	if m.cutSessID != "" && m.curCol == allColSession {
-		key := slotKeys[m.curRow]
-		setSessionSlotKey(m.cutSessID, key)
+		setSessionSlotKey(m.cutSessID, m.curRow)
 		m.cutSessID = ""
 		m.refresh()
 	} else if m.cutWinID != "" && m.curCol != allColSession {
-		laneKey := laneOrder[m.curCol-1]
-		tmuxRun("set-window-option", "-t", m.cutWinID, "@hometown_lane", laneKey)
+		laneKey := m.curCol - 1
+		tmuxRun("set-window-option", "-t", m.cutWinID, "@hometown_lane", storeIndex(laneKey))
 		m.cutWinID = ""
 		m.refresh()
 	}
@@ -576,8 +563,7 @@ func (m AllModel) currentWin() *Window {
 		return nil
 	}
 	row := m.rows[m.curRow]
-	lane := laneOrder[m.curCol-1]
-	if w, ok := row.windows[lane]; ok {
+	if w, ok := row.windows[m.curCol-1]; ok {
 		wCopy := w
 		return &wCopy
 	}
@@ -635,6 +621,9 @@ func (m AllModel) View() string {
 
 	var lines []string
 	lines = append(lines, "") // blank line at top
+	if errLine := keysErrorLine(m.width); errLine != "" {
+		lines = append(lines, errLine)
+	}
 	lines = append(lines, pad+m.renderHeader())
 	lines = append(lines, pad+allHeaderRuleStyle.Render(strings.Repeat("─", tw)))
 	for i, row := range m.rows {
@@ -660,11 +649,11 @@ func (m AllModel) renderHeader() string {
 	sb.WriteString(" ")
 	sb.WriteString(sessHead)
 	sb.WriteString("  ")
-	for i, laneKey := range laneOrder {
+	for i := range laneOrder {
 		if i > 0 {
 			sb.WriteString("  ")
 		}
-		sb.WriteString(lipgloss.NewStyle().Width(w).Render(laneDisplayNames[laneKey]))
+		sb.WriteString(lipgloss.NewStyle().Width(w).Render(indexDisplay(i)))
 	}
 	return sb.String()
 }
@@ -688,7 +677,7 @@ func (m AllModel) renderRow(rowIdx int, row allRow) string {
 	// Key cell.
 	keyCell := lipgloss.NewStyle().Width(allKeyColW).
 		Foreground(fg).
-		Render(slotDisplayNames[row.slotKey])
+		Render(indexDisplay(row.slotKey))
 
 	// Session cell.
 	inSessCur := isCurRow && m.curCol == allColSession
@@ -731,7 +720,7 @@ func (m AllModel) renderRow(rowIdx int, row allRow) string {
 			sb.WriteString(dotStyle.Render("-"))
 		}
 	} else {
-		for i, laneKey := range laneOrder {
+		for i := range laneOrder {
 			if i > 0 {
 				sb.WriteString("  ")
 			}
@@ -742,7 +731,7 @@ func (m AllModel) renderRow(rowIdx int, row allRow) string {
 				winBase = winBase.Background(lipgloss.Color("237"))
 			}
 
-			win, hasWin := row.windows[laneKey]
+			win, hasWin := row.windows[i]
 			if !hasWin {
 				sb.WriteString(winBase.Foreground(emptyFg).Render("-"))
 				continue

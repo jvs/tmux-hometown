@@ -13,9 +13,10 @@ import (
 )
 
 var (
-	stateHeadStyle = lipgloss.NewStyle().Bold(true)
-	stateRuleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	stateKeyStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("246"))
+	stateHeadStyle   = lipgloss.NewStyle().Bold(true)
+	stateRuleStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	stateKeyStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("246"))
+	stateBadValStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
 )
 
 // StateModel is a read-only, scrollable view of every hometown option value
@@ -196,6 +197,18 @@ func buildStateLines() []string {
 		fmt.Sprintf("   %s  %s",
 			stateKeyStyle.Render(fmt.Sprintf("%-22s", "cycle_pattern")),
 			cyclePatternDisplay))
+
+	rawKeys := tmuxGetGlobalOption("@hometown_keys")
+	keysDisplay := rawKeys
+	if rawKeys == "" {
+		keysDisplay = defaultKeysStr + "  " + dimStyle.Render("(default)")
+	} else if keysError != "" {
+		keysDisplay = rawKeys + "  " + keysErrorStyle.Render("invalid — "+keysError)
+	}
+	lines = append(lines,
+		fmt.Sprintf("   %s  %s",
+			stateKeyStyle.Render(fmt.Sprintf("%-22s", "keys")),
+			keysDisplay))
 	lines = append(lines, "")
 
 	// ── Sessions ──────────────────────────────────────────────────────────────
@@ -210,7 +223,13 @@ func buildStateLines() []string {
 			sessID, slotKey, slotNever, name := p[0], p[1], p[2], p[3]
 			var sb strings.Builder
 			sb.WriteString(fmt.Sprintf("   %-6s  %-22s", sessID, truncate(name, 22)))
-			appendStateOpt(&sb, "@hometown_slot", slotKey)
+			if slotKey != "" {
+				display := slotKey
+				if parseIndex(slotKey) < 0 {
+					display = stateBadValStyle.Render(slotKey)
+				}
+				appendStateOptVal(&sb, "@hometown_slot", display)
+			}
 			appendStateOpt(&sb, "@hometown_slot_never", slotNever)
 			lines = append(lines, sb.String())
 		}
@@ -250,7 +269,12 @@ func buildStateLines() []string {
 				sessName := sessNames[sessID]
 				var sessLabel string
 				if slot := sessSlots[sessID]; slot != "" {
-					slotStr := "  Slot " + slotDisplayNames[slot]
+					slotStr := "  Slot " + func() string {
+						if i := parseIndex(slot); i >= 0 {
+							return indexDisplay(i)
+						}
+						return stateBadValStyle.Render(slot)
+					}()
 					if len([]rune(sessName)) <= sessNameColW {
 						sessLabel = fmt.Sprintf("%-6s  %-*s%s", sessID, sessNameColW, sessName, slotStr)
 					} else {
@@ -263,7 +287,13 @@ func buildStateLines() []string {
 			}
 			var sb strings.Builder
 			sb.WriteString(fmt.Sprintf("   %-6s  %-22s", winID, truncate(name, 22)))
-			appendStateOpt(&sb, "@hometown_lane", lane)
+			laneDisplay := lane
+			if i := parseIndex(lane); i >= 0 {
+				laneDisplay = indexDisplay(i)
+			} else if lane != "" {
+				laneDisplay = stateBadValStyle.Render(lane)
+			}
+			appendStateOpt(&sb, "@hometown_lane", laneDisplay)
 			if visited != "" && visited != "0" {
 				appendStateOptVal(&sb, "@hometown_visited", formatVisitedTS(visited))
 			}

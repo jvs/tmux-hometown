@@ -12,11 +12,11 @@ import (
 )
 
 type SlotsModel struct {
-	slots map[string][]Session
+	slots map[int][]Session
 
 	// Column cursor
 	colSlot int // 0–4, index into slotKeys
-	colRow  int // index into slots[slotKeys[colSlot]]
+	colRow  int // index into slots[colSlot]
 
 	// Cut/paste
 	cutSessID string
@@ -50,7 +50,8 @@ type SlotsModel struct {
 }
 
 func newSlotsModel(initialSessID, commandFile, returnView, switchView, activationKey, shiftActivationKey, cyclePattern string) (SlotsModel, error) {
-	promptMode := getSessionSlotKey(initialSessID) == "" &&
+	_, hasSlot := getSessionSlotKey(initialSessID)
+	promptMode := !hasSlot &&
 		tmuxGetSessionOption(initialSessID, "@hometown_slot_never") != "1"
 
 	sess, _ := loadSession(initialSessID)
@@ -74,10 +75,10 @@ func newSlotsModel(initialSessID, commandFile, returnView, switchView, activatio
 }
 
 func (m *SlotsModel) positionOnSession(sessID string) {
-	for li, key := range slotKeys {
-		for ri, s := range m.slots[key] {
+	for i := range slotKeys {
+		for ri, s := range m.slots[i] {
 			if s.ID == sessID {
-				m.colSlot = li
+				m.colSlot = i
 				m.colRow = ri
 				return
 			}
@@ -168,9 +169,9 @@ func (m SlotsModel) handlePromptKey(msg tea.KeyMsg) (SlotsModel, tea.Cmd) {
 		return m, cyclePopup("sessions", m.cyclePattern, m.commandFile, false)
 	}
 	// h/j/k/l/; assign the selected key to the current session.
-	for _, key := range slotKeys {
-		if msg.String() == laneKeyToUserKey(key) || msg.String() == key {
-			setSessionSlotKey(m.initialSessID, key)
+	for i, key := range slotKeys {
+		if msg.String() == key {
+			setSessionSlotKey(m.initialSessID, i)
 			m.slots = groupBySlot()
 			m.positionOnSession(m.initialSessID)
 			m.promptMode = false
@@ -251,14 +252,14 @@ func (m SlotsModel) handleKey(msg tea.KeyMsg) (SlotsModel, tea.Cmd) {
 		return m.handlePaste()
 
 	case "down":
-		sessions := m.slots[slotKeys[m.colSlot]]
+		sessions := m.slots[m.colSlot]
 		if m.colRow < len(sessions)-1 {
 			m.colRow++
 		}
 		return m, m.switchToCurrentCmd()
 
 	case "j":
-		sessions := m.slots[slotKeys[m.colSlot]]
+		sessions := m.slots[m.colSlot]
 		if m.colRow < len(sessions)-1 {
 			m.colRow++
 		} else if m.colSlot < len(slotKeys)-1 {
@@ -278,7 +279,7 @@ func (m SlotsModel) handleKey(msg tea.KeyMsg) (SlotsModel, tea.Cmd) {
 			m.colRow--
 		} else if m.colSlot > 0 {
 			m.colSlot--
-			sessions := m.slots[slotKeys[m.colSlot]]
+			sessions := m.slots[m.colSlot]
 			if len(sessions) > 0 {
 				m.colRow = len(sessions) - 1
 			} else {
@@ -323,13 +324,13 @@ func (m SlotsModel) handleKey(msg tea.KeyMsg) (SlotsModel, tea.Cmd) {
 	if ok {
 		laneIdx := slotLaneIdx
 		if m.colSlot == laneIdx {
-			sessions := m.slots[slotKeys[laneIdx]]
+			sessions := m.slots[laneIdx]
 			if n := len(sessions); n > 0 {
 				m.colRow = (m.colRow + 1) % n
 			}
 		} else {
 			m.colSlot = laneIdx
-			sessions := m.slots[slotKeys[laneIdx]]
+			sessions := m.slots[laneIdx]
 			if len(sessions) > 0 && m.colRow >= len(sessions) {
 				m.colRow = len(sessions) - 1
 			}
@@ -344,7 +345,7 @@ func (m SlotsModel) handleKey(msg tea.KeyMsg) (SlotsModel, tea.Cmd) {
 }
 
 func (m *SlotsModel) clampColRow() {
-	sessions := m.slots[slotKeys[m.colSlot]]
+	sessions := m.slots[m.colSlot]
 	if len(sessions) > 0 && m.colRow >= len(sessions) {
 		m.colRow = len(sessions) - 1
 	}
@@ -377,7 +378,7 @@ func (m SlotsModel) handleAdd(name string) (SlotsModel, tea.Cmd) {
 	if name == "" {
 		return m, nil
 	}
-	key := slotKeys[m.colSlot]
+	key := m.colSlot
 
 	if m.commandFile != "" {
 		exe, _ := os.Executable()
@@ -386,7 +387,7 @@ func (m SlotsModel) handleAdd(name string) (SlotsModel, tea.Cmd) {
 				"tmux set-option -t \"$NEWSESS\" @hometown_slot %s\n"+
 				"NEWWIN=$(tmux display-message -t \"$NEWSESS\" -p '#{window_id}')\n"+
 				"%s record-window-visit \"$NEWWIN\"\n",
-			shellSingleQuote(name), key, exe)
+			shellSingleQuote(name), storeIndex(key), exe)
 		if m.returnView != "" {
 			content += exe + " show-" + m.returnView + "\n"
 		}
@@ -409,19 +410,19 @@ func (m SlotsModel) handleAdd(name string) (SlotsModel, tea.Cmd) {
 }
 
 func (m SlotsModel) handleEnterEmpty() (SlotsModel, tea.Cmd) {
-	key := slotKeys[m.colSlot]
+	key := m.colSlot
 
 	if m.commandFile != "" {
 		exe, _ := os.Executable()
-		name := "Session " + slotSessionNames[key]
+		name := "Session " + indexName(key)
 		content := fmt.Sprintf(
 			"NEWSESS=$(tmux new-session -d -s %s -P -F '#{session_id}' 2>/dev/null || tmux new-session -d -P -F '#{session_id}')\n"+
 				"tmux set-option -t \"$NEWSESS\" @hometown_slot %s\n"+
-				"tmux set-window-option -t \"$NEWSESS\" @hometown_lane j\n"+
+				"tmux set-window-option -t \"$NEWSESS\" @hometown_lane %s\n"+
 				"tmux switch-client -t \"$NEWSESS\"\n"+
 				"NEWWIN=$(tmux display-message -t \"$NEWSESS\" -p '#{window_id}')\n"+
 				"%s record-window-visit \"$NEWWIN\"\n",
-			shellSingleQuote(name), key, exe)
+			shellSingleQuote(name), storeIndex(key), storeIndex(1), exe)
 		os.WriteFile(m.commandFile, []byte(content), 0644)
 		return m, tea.Quit
 	}
@@ -475,15 +476,15 @@ func (m SlotsModel) handleDelete() (SlotsModel, tea.Cmd) {
 
 func (m SlotsModel) findFallbackSession(deletedID string, all []Session) string {
 	// 1. Another session in the same column.
-	for _, s := range m.slots[slotKeys[m.colSlot]] {
+	for _, s := range m.slots[m.colSlot] {
 		if s.ID != deletedID {
 			return s.ID
 		}
 	}
 
 	// 2. Any session with a key assigned.
-	for _, key := range slotKeys {
-		for _, s := range m.slots[key] {
+	for i := range slotKeys {
+		for _, s := range m.slots[i] {
 			if s.ID != deletedID {
 				return s.ID
 			}
@@ -521,8 +522,7 @@ func (m SlotsModel) handlePaste() (SlotsModel, tea.Cmd) {
 	if m.cutSessID == "" {
 		return m, nil
 	}
-	key := slotKeys[m.colSlot]
-	setSessionSlotKey(m.cutSessID, key)
+	setSessionSlotKey(m.cutSessID, m.colSlot)
 	pastedID := m.cutSessID
 	m.cutSessID = ""
 	m.refresh()
@@ -531,7 +531,7 @@ func (m SlotsModel) handlePaste() (SlotsModel, tea.Cmd) {
 }
 
 func (m SlotsModel) currentSession() *Session {
-	sessions := m.slots[slotKeys[m.colSlot]]
+	sessions := m.slots[m.colSlot]
 	if m.colRow >= 0 && m.colRow < len(sessions) {
 		s := sessions[m.colRow]
 		return &s
@@ -607,7 +607,7 @@ func (m SlotsModel) View() string {
 func (m SlotsModel) viewPrompt() string {
 	question := lipgloss.NewStyle().Render(
 		fmt.Sprintf("Assign a slot to session %q?", m.initialSessName))
-	options := hintStyle.Render("[H] [J] [K] [L] [;]  [s]kip  [n]ever")
+	options := hintStyle.Render(promptKeyList() + "  [s]kip  [n]ever")
 	line := question + "  " + options
 	centered := lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(line)
 	top := strings.Repeat("\n", m.height/2-1)
@@ -622,14 +622,14 @@ func (m SlotsModel) viewGrid() string {
 	pad := strings.Repeat(" ", sidePad)
 
 	var headerSB strings.Builder
-	for li, key := range slotKeys {
+	for li := range slotKeys {
 		var s lipgloss.Style
 		if li == m.colSlot {
 			s = lipgloss.NewStyle().Width(colWidth).Bold(true)
 		} else {
 			s = lipgloss.NewStyle().Width(colWidth).Foreground(lipgloss.Color("246"))
 		}
-		headerSB.WriteString(s.Render(slotDisplayNames[key]))
+		headerSB.WriteString(s.Render(indexDisplay(li)))
 		if li < len(slotKeys)-1 {
 			headerSB.WriteString("  ")
 		}
@@ -639,8 +639,8 @@ func (m SlotsModel) viewGrid() string {
 
 	var colLines [][]string
 	maxHeight := 0
-	for li, key := range slotKeys {
-		lines := m.renderSessionLines(li, key, colWidth)
+	for li := range slotKeys {
+		lines := m.renderSessionLines(li, colWidth)
 		colLines = append(colLines, lines)
 		if len(lines) > maxHeight {
 			maxHeight = len(lines)
@@ -649,6 +649,9 @@ func (m SlotsModel) viewGrid() string {
 
 	emptyCell := strings.Repeat(" ", colWidth)
 	rows := []string{pad + headerSB.String(), ruleRow}
+	if errLine := keysErrorLine(m.width); errLine != "" {
+		rows = append([]string{errLine}, rows...)
+	}
 	for row := 0; row < maxHeight; row++ {
 		var sb strings.Builder
 		for ci, lines := range colLines {
@@ -667,8 +670,8 @@ func (m SlotsModel) viewGrid() string {
 	return "\n" + strings.Join(rows, "\n")
 }
 
-func (m SlotsModel) renderSessionLines(slotIdx int, key string, colWidth int) []string {
-	sessions := m.slots[key]
+func (m SlotsModel) renderSessionLines(slotIdx int, colWidth int) []string {
+	sessions := m.slots[slotIdx]
 	isCursorCol := slotIdx == m.colSlot
 
 	plain := lipgloss.NewStyle().Width(colWidth)

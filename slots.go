@@ -6,86 +6,75 @@ import (
 	"strings"
 )
 
-var slotKeys = []string{"h", "j", "k", "l", "semi"}
+// slotKeys contains the configured slot keys in order, e.g. ["h","j","k","l",";"].
+// Populated by initKeys() at startup via buildKeyState.
+var slotKeys []string
 
-var slotDisplayNames = map[string]string{
-	"h": "H", "j": "J", "k": "K", "l": "L", "semi": ";",
-}
-
-// slotSessionNames maps slot keys to the name used when auto-creating a
-// session for that slot. ";" becomes "SC" to keep the name shell-friendly.
-var slotSessionNames = map[string]string{
-	"h": "H", "j": "J", "k": "K", "l": "L", "semi": "SC",
-}
-
-// getSessionSlotKey returns the slot key assigned to a session, or "".
-func getSessionSlotKey(sessID string) string {
-	return tmuxGetSessionOption(sessID, "@hometown_slot")
-}
-
-// setSessionSlotKey assigns a session to a slot key, or removes the
-// assignment when key == "".
-func setSessionSlotKey(sessID, key string) error {
-	if key == "" {
-		return exec.Command("tmux", "set-option", "-t", sessID, "-u", "@hometown_slot").Run()
+// getSessionSlotKey returns the slot index assigned to a session, and whether
+// one is set.  The stored tmux option is a digit string ("0"–"4").
+func getSessionSlotKey(sessID string) (int, bool) {
+	i := parseIndex(tmuxGetSessionOption(sessID, "@hometown_slot"))
+	if i < 0 {
+		return 0, false
 	}
-	return exec.Command("tmux", "set-option", "-t", sessID, "@hometown_slot", key).Run()
+	return i, true
 }
 
-// getSlotSessions returns all sessions assigned to the given slot key.
-func getSlotSessions(key string) []Session {
+// setSessionSlotKey records slot index i on a session.
+func setSessionSlotKey(sessID string, i int) error {
+	return exec.Command("tmux", "set-option", "-t", sessID, "@hometown_slot", storeIndex(i)).Run()
+}
+
+// clearSlotForSession removes the slot assignment from a session.
+func clearSlotForSession(sessID string) error {
+	return exec.Command("tmux", "set-option", "-t", sessID, "-u", "@hometown_slot").Run()
+}
+
+// getSlotSessions returns all sessions assigned to slot index i.
+func getSlotSessions(i int) []Session {
 	sessions, err := listAllSessions()
 	if err != nil {
 		return nil
 	}
 	var result []Session
 	for _, s := range sessions {
-		if getSessionSlotKey(s.ID) == key {
+		si, ok := getSessionSlotKey(s.ID)
+		if ok && si == i {
 			result = append(result, s)
 		}
 	}
 	return result
 }
 
-// groupBySlot returns a map from slot key to the sessions in that slot.
-func groupBySlot() map[string][]Session {
-	result := make(map[string][]Session)
-	for _, key := range slotKeys {
-		result[key] = nil
+// groupBySlot returns a map from slot index to the sessions in that slot.
+func groupBySlot() map[int][]Session {
+	result := make(map[int][]Session, len(slotKeys))
+	for i := range slotKeys {
+		result[i] = nil
 	}
 	sessions, err := listAllSessions()
 	if err != nil {
 		return result
 	}
 	for _, s := range sessions {
-		key := getSessionSlotKey(s.ID)
-		if key != "" {
-			result[key] = append(result[key], s)
+		i, ok := getSessionSlotKey(s.ID)
+		if ok {
+			result[i] = append(result[i], s)
 		}
 	}
 	return result
 }
 
-// slotKeyForSession returns the slot key for a session, or "".
-func slotKeyForSession(sessID string) string {
-	return getSessionSlotKey(sessID)
+// setSlot assigns session sessID to slot index i.
+func setSlot(i int, sessID string) error {
+	return setSessionSlotKey(sessID, i)
 }
 
-// setSlot assigns a session to a slot key.
-func setSlot(key, sessID string) error {
-	return setSessionSlotKey(sessID, key)
-}
-
-// clearSlotForSession removes the slot assignment from a session.
-func clearSlotForSession(sessID string) error {
-	return setSessionSlotKey(sessID, "")
-}
-
-// newSlotSession creates a new detached session for a slot key, naming it
-// "Session <X>" (where X comes from slotSessionNames) if that name is not
-// already taken. The session's initial window is tagged with @hometown_lane "j".
-func newSlotSession(key string) (string, error) {
-	name := "Session " + slotSessionNames[key]
+// newSlotSession creates a new detached session for slot index i, naming it
+// "Session <X>" if that name is not already taken.  The session's initial
+// window is tagged with lane index 1 (the default lane).
+func newSlotSession(i int) (string, error) {
+	name := "Session " + indexName(i)
 	out, err := exec.Command("tmux", "new-session", "-d", "-s", name, "-P", "-F", "#{session_id}").Output()
 	if err != nil {
 		// Name already taken — create without a specific name.
@@ -95,35 +84,27 @@ func newSlotSession(key string) (string, error) {
 		}
 	}
 	sessID := strings.TrimSpace(string(out))
-	// Tag the initial window as lane "j" and record it as that lane's window.
 	winOut, err := exec.Command("tmux", "list-windows", "-t", sessID, "-F", "#{window_id}").Output()
 	if err == nil {
 		winID := strings.TrimSpace(string(winOut))
 		if winID != "" {
-			exec.Command("tmux", "set-window-option", "-t", winID, "@hometown_lane", "j").Run()
+			exec.Command("tmux", "set-window-option", "-t", winID, "@hometown_lane", storeIndex(1)).Run()
 		}
 	}
 	return sessID, nil
 }
 
-// laneKeyToUserKey converts an internal lane/slot key to the user-facing character.
-func laneKeyToUserKey(key string) string {
-	if key == "semi" {
-		return ";"
-	}
-	return key
-}
-
-// parseSlotKey normalizes a user-provided key character to an internal key name.
-func parseSlotKey(s string) (string, error) {
-	switch strings.ToLower(s) {
-	case ";", "semi", "semicolon", "sc":
-		return "semi", nil
-	}
-	for _, k := range slotKeys {
-		if s == k {
-			return k, nil
+// parseSlotKey validates that s is one of the currently configured slot key
+// characters and returns its index.
+func parseSlotKey(s string) (int, error) {
+	for i, key := range slotKeys {
+		if s == key {
+			return i, nil
 		}
 	}
-	return "", fmt.Errorf("invalid key %q: must be h, j, k, l, or ;", s)
+	displays := make([]string, len(slotKeys))
+	for i, k := range slotKeys {
+		displays[i] = keyDisplay(k)
+	}
+	return -1, fmt.Errorf("invalid key %q: must be one of %s", s, strings.Join(displays, ", "))
 }

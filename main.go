@@ -25,10 +25,12 @@ func main() {
 	cmd := os.Args[1]
 	args := os.Args[2:]
 
+	initKeys()
+
 	switch cmd {
 	case "switch-window":
 		if len(args) < 1 {
-			die("switch-window requires a key (h, j, k, l, or ;)")
+			die("switch-window requires a key (%s)", strings.Join(slotKeys, ", "))
 		}
 		key, err := parseSlotKey(args[0])
 		if err != nil {
@@ -40,7 +42,7 @@ func main() {
 
 	case "switch-session":
 		if len(args) < 1 {
-			die("switch-session requires a key (h, j, k, l, or ;)")
+			die("switch-session requires a key (%s)", strings.Join(slotKeys, ", "))
 		}
 		key, err := parseSlotKey(args[0])
 		if err != nil {
@@ -87,7 +89,7 @@ func main() {
 
 	case "switch-session-and-show-lanes":
 		if len(args) < 1 {
-			die("switch-session-and-show-lanes requires a key (h, j, k, l, or ;)")
+			die("switch-session-and-show-lanes requires a key (%s)", strings.Join(slotKeys, ", "))
 		}
 		key, err := parseSlotKey(args[0])
 		if err != nil {
@@ -400,14 +402,17 @@ func buildPopupArgs(view, scriptPath, exe string) []string {
 func calcSlotsHeight() int {
 	slots := groupBySlot()
 	maxPerSlot := 1
-	for _, key := range slotKeys {
-		if n := len(slots[key]); n > maxPerSlot {
+	for i := range slotKeys {
+		if n := len(slots[i]); n > maxPerSlot {
 			maxPerSlot = n
 		}
 	}
 	h := maxPerSlot + 7
 	if h < 8 {
 		h = 8
+	}
+	if keysError != "" {
+		h++
 	}
 	return h
 }
@@ -419,14 +424,14 @@ func calcLanesHeight(sessID string) int {
 	}
 	lanes := groupByLane(windows)
 	maxPerLane := 1
-	for _, key := range laneOrder {
-		if n := len(lanes[key]); n > maxPerLane {
+	for i := range laneOrder {
+		if n := len(lanes[i]); n > maxPerLane {
 			maxPerLane = n
 		}
 	}
 	h := maxPerLane + 7
 	for _, w := range windows {
-		if w.Lane == "" {
+		if w.Lane < 0 {
 			// The "N windows not shown" notice adds a blank line + a text
 			// line above the normal actions bar.
 			h += 2
@@ -435,6 +440,9 @@ func calcLanesHeight(sessID string) int {
 	}
 	if h < 8 {
 		h = 8
+	}
+	if keysError != "" {
+		h++
 	}
 	return h
 }
@@ -451,7 +459,7 @@ func runPendingCommand() {
 
 // ── Lane commands ─────────────────────────────────────────────────────────────
 
-func cmdSwitchLane(key string) error {
+func cmdSwitchLane(key int) error {
 	sessID, curWinID, err := getCurrentSessionAndWindow()
 	if err != nil {
 		return err
@@ -462,7 +470,7 @@ func cmdSwitchLane(key string) error {
 
 	// If the current window has no @hometown_lane set, assign it now.
 	if currentLaneIsDefault {
-		tmuxRun("set-window-option", "-t", curWinID, "@hometown_lane", currentLane)
+		tmuxRun("set-window-option", "-t", curWinID, "@hometown_lane", storeIndex(currentLane))
 	}
 
 	if key == currentLane {
@@ -470,7 +478,7 @@ func cmdSwitchLane(key string) error {
 		windows, _ := loadWindows(sessID)
 		laneWins := filterByLane(windows, key)
 		if len(laneWins) <= 1 {
-			return tmuxRun("display-message", "[ Window "+laneDisplayLabel(key)+" ]")
+			return tmuxRun("display-message", "[ Window "+indexDisplay(key)+" ]")
 		}
 		idx := indexByID(laneWins, curWinID)
 		nextIdx := (idx + 1) % len(laneWins)
@@ -500,7 +508,7 @@ func cmdSwitchLane(key string) error {
 		return err
 	}
 	newWinID := strings.TrimSpace(string(out))
-	tmuxRun("set-window-option", "-t", newWinID, "@hometown_lane", key)
+	tmuxRun("set-window-option", "-t", newWinID, "@hometown_lane", storeIndex(key))
 	recordWindowVisit(newWinID)
 	return nil
 }
@@ -545,7 +553,7 @@ func cmdNewWindow() error {
 		return err
 	}
 	newWinID := strings.TrimSpace(string(out))
-	tmuxRun("set-window-option", "-t", newWinID, "@hometown_lane", currentLane)
+	tmuxRun("set-window-option", "-t", newWinID, "@hometown_lane", storeIndex(currentLane))
 	recordWindowVisit(newWinID)
 	return nil
 }
@@ -567,7 +575,7 @@ func cmdKillWindow() error {
 //  2. Any other window in the session.
 //  3. Another session entirely (when this is the last window).
 //  4. No switch needed (only session — tmux will exit).
-func buildKillWindowConfirmCmd(sessID, curWinID, currentLane string, windows []Window) string {
+func buildKillWindowConfirmCmd(sessID, curWinID string, currentLane int, windows []Window) string {
 	for _, w := range filterByLane(windows, currentLane) {
 		if w.ID != curWinID {
 			return fmt.Sprintf(
@@ -614,20 +622,20 @@ func cmdTagNewWindow() error {
 	if existing != "" {
 		return nil
 	}
-	// Inherit lane from the previous window, defaulting to "j".
+	// Inherit lane from the previous window, defaulting to laneOrder[1].
 	out, err := exec.Command("tmux", "show-option", "-wqv", "-t", "{last}", "@hometown_lane").Output()
-	lane := "j"
+	lane := 1
 	if err == nil {
-		if l := strings.TrimSpace(string(out)); l != "" {
-			lane = l
+		if i := parseIndex(strings.TrimSpace(string(out))); i >= 0 {
+			lane = i
 		}
 	}
-	return exec.Command("tmux", "set-option", "-w", "@hometown_lane", lane).Run()
+	return exec.Command("tmux", "set-option", "-w", "@hometown_lane", storeIndex(lane)).Run()
 }
 
 // ── Slot commands ─────────────────────────────────────────────────────────────
 
-func cmdSwitchSlot(key string) error {
+func cmdSwitchSlot(key int) error {
 	currentSessID, _, err := getCurrentSessionAndWindow()
 	if err != nil {
 		return err
@@ -653,7 +661,7 @@ func cmdSwitchSlot(key string) error {
 
 	if len(sessions) == 1 {
 		if sessions[0].ID == currentSessID {
-			tmuxRun("display-message", "[ Session "+slotDisplayNames[key]+" ]")
+			tmuxRun("display-message", "[ Session "+indexDisplay(key)+" ]")
 			return nil
 		}
 		if err := tmuxRun("switch-client", "-t", sessions[0].ID); err != nil {
@@ -683,7 +691,7 @@ func cmdSwitchSlot(key string) error {
 // explicitly targeting a pane in the new session, so that display-popup and
 // its format-string expansion use the correct session context rather than
 // the inherited $TMUX_PANE from the original session.
-func cmdSwitchSlotAndShowLanes(key string) error {
+func cmdSwitchSlotAndShowLanes(key int) error {
 	if _, _, err := getCurrentSessionAndWindow(); err != nil {
 		return err
 	}
@@ -768,15 +776,6 @@ func cmdFlipSession() error {
 		return err
 	}
 	return nil
-	return nil
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-// laneDisplayLabel returns a display-friendly label for a lane key.
-func laneDisplayLabel(key string) string {
-	if key == "semi" {
-		return ";"
-	}
-	return strings.ToUpper(key)
-}

@@ -59,23 +59,9 @@ func cycle(name, pattern string, forward bool) string {
 	return ""
 }
 
-var laneOrder = []string{"h", "j", "k", "l", "semi"}
-
-var laneLabels = map[string]string{
-	"h":    " H",
-	"j":    " J",
-	"k":    " K",
-	"l":    " L",
-	"semi": "SC",
-}
-
-var laneDisplayNames = map[string]string{
-	"h":    "H",
-	"j":    "J",
-	"k":    "K",
-	"l":    "L",
-	"semi": "SC",
-}
+// laneOrder contains the configured lane keys in order, e.g. ["h","j","k","l",";"].
+// Populated by initKeys() at startup via buildKeyState.
+var laneOrder []string
 
 type Session struct {
 	ID   string
@@ -86,7 +72,7 @@ type Window struct {
 	ID        string
 	Name      string
 	Index     string
-	Lane      string // "h", "j", "k", "l", "semi"
+	Lane      int // lane index (0–4); -1 means unassigned
 	SessionID string
 }
 
@@ -150,25 +136,11 @@ func loadWindows(sessID string) ([]Window, error) {
 		if len(parts) < 4 {
 			continue
 		}
-		lane := parts[2]
-		// Validate non-empty lane values; unknown values default to "j".
-		// Empty lane means explicitly unassigned — preserved as "".
-		if lane != "" {
-			valid := false
-			for _, key := range laneOrder {
-				if key == lane {
-					valid = true
-					break
-				}
-			}
-			if !valid {
-				lane = "j"
-			}
-		}
+		laneIdx := parseIndex(parts[2]) // -1 if unset or unrecognised
 		windows = append(windows, Window{
 			ID:        parts[0],
 			Index:     parts[1],
-			Lane:      lane,
+			Lane:      laneIdx,
 			Name:      parts[3],
 			SessionID: sessID,
 		})
@@ -177,14 +149,14 @@ func loadWindows(sessID string) ([]Window, error) {
 }
 
 // groupByLane groups windows into per-lane slices preserving tmux window order.
-func groupByLane(windows []Window) map[string][]Window {
-	lanes := make(map[string][]Window, len(laneOrder))
-	for _, key := range laneOrder {
-		lanes[key] = nil
+func groupByLane(windows []Window) map[int][]Window {
+	lanes := make(map[int][]Window, len(laneOrder))
+	for i := range laneOrder {
+		lanes[i] = nil
 	}
 	for _, w := range windows {
-		if w.Lane == "" {
-			continue // unassigned windows are excluded from the grid
+		if w.Lane < 0 {
+			continue // unassigned
 		}
 		lanes[w.Lane] = append(lanes[w.Lane], w)
 	}
@@ -241,18 +213,18 @@ func tmuxGetCurrentWindowOption(name string) string {
 // ── Lane helpers ──────────────────────────────────────────────────────────────
 
 // getCurrentLane returns the @hometown_lane option of the currently active window.
-func getCurrentLane() string {
-	lane := tmuxGetCurrentWindowOption("@hometown_lane")
-	if lane == "" {
-		return "j"
+func getCurrentLane() int {
+	i := parseIndex(tmuxGetCurrentWindowOption("@hometown_lane"))
+	if i < 0 {
+		return 1
 	}
-	return lane
+	return i
 }
 
 // mostRecentWindowInLane returns the window in the given lane with the highest
-// @hometown_visited timestamp. Falls back to the first window in the lane when
-// none have a visit record. Returns nil if the lane has no windows.
-func mostRecentWindowInLane(windows []Window, lane string) *Window {
+// @hometown_visited timestamp.  Falls back to the first window in the lane when
+// none have a visit record.  Returns nil if the lane has no windows.
+func mostRecentWindowInLane(windows []Window, lane int) *Window {
 	laneWins := filterByLane(windows, lane)
 	if len(laneWins) == 0 {
 		return nil
@@ -275,7 +247,7 @@ func sessionExists(sessID string) bool {
 }
 
 // filterByLane returns windows in the given lane.
-func filterByLane(windows []Window, lane string) []Window {
+func filterByLane(windows []Window, lane int) []Window {
 	var result []Window
 	for _, w := range windows {
 		if w.Lane == lane {

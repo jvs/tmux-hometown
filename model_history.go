@@ -154,6 +154,9 @@ func calcHistoryHeight() int {
 	if h < 8 {
 		h = 8
 	}
+	if keysError != "" {
+		h++
+	}
 	return h
 }
 
@@ -298,6 +301,9 @@ func (m HistoryModel) View() string {
 
 	// Blank line at top.
 	sb.WriteString("\n")
+	if errLine := keysErrorLine(m.width); errLine != "" {
+		sb.WriteString(errLine + "\n")
+	}
 
 	// Column headers.
 	sessHead := lipgloss.NewStyle().Width(histSessColW).Render(histHeaderStyle.Render("Session"))

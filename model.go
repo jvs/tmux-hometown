@@ -27,26 +27,12 @@ var (
 	cursorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
 )
 
-// laneKeyLane maps h/j/k/l/;/H/J/K/L/: to their lane index (0–4).
-var laneKeyLane = map[string]int{
-	"h": 0, "j": 1, "k": 2, "l": 3, ";": 4,
-	"H": 0, "J": 1, "K": 2, "L": 3, ":": 4,
-}
-
-// laneKeyShift identifies the shift variants (move up).
-var laneKeyShift = map[string]bool{
-	"H": true, "J": true, "K": true, "L": true, ":": true,
-}
-
-// altLaneKeyLane maps alt+h/j/k/l/; to their lane/slot index (0–4).
-var altLaneKeyLane = map[string]int{
-	"alt+h": 0, "alt+j": 1, "alt+k": 2, "alt+l": 3, "alt+;": 4,
-}
-
-// altShiftLaneKeyLane maps alt+H/J/K/L/: to their lane/slot index (0–4).
-var altShiftLaneKeyLane = map[string]int{
-	"alt+H": 0, "alt+J": 1, "alt+K": 2, "alt+L": 3, "alt+:": 4,
-}
+// laneKeyLane, laneKeyShift, altLaneKeyLane, and altShiftLaneKeyLane are
+// rebuilt by initKeys() via buildKeyState whenever the configured keys change.
+var laneKeyLane map[string]int
+var laneKeyShift map[string]bool
+var altLaneKeyLane map[string]int
+var altShiftLaneKeyLane map[string]int
 
 // shiftOf returns the shift variant of a single-character activation key.
 // Letter keys return their uppercase form; ";" returns ":".
@@ -70,11 +56,11 @@ func cyclePopup(name, pattern, commandFile string, forward bool) tea.Cmd {
 type Model struct {
 	session Session
 	windows []Window
-	lanes   map[string][]Window
+	lanes   map[int][]Window
 
 	// Column cursor
 	colLane   int // 0–4, index into laneOrder
-	colWindow int // index into lanes[laneOrder[colLane]]
+	colWindow int // index into lanes[colLane]
 
 	// Cut/paste
 	cutWinID string
@@ -143,8 +129,8 @@ func newModel(initialSessID, initialWinID, commandFile, returnView, switchView, 
 }
 
 func (m *Model) positionOnWindow(winID string) {
-	for li, key := range laneOrder {
-		for wi, w := range m.lanes[key] {
+	for li := range laneOrder {
+		for wi, w := range m.lanes[li] {
 			if w.ID == winID {
 				m.colLane = li
 				m.colWindow = wi
@@ -238,8 +224,7 @@ func (m Model) handlePromptKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, cyclePopup("windows", m.cyclePattern, m.commandFile, false)
 	}
 	if laneIdx, ok := laneKeyLane[msg.String()]; ok && !laneKeyShift[msg.String()] {
-		key := laneOrder[laneIdx]
-		tmuxRun("set-window-option", "-t", m.initialWinID, "@hometown_lane", key)
+		tmuxRun("set-window-option", "-t", m.initialWinID, "@hometown_lane", storeIndex(laneIdx))
 		m.refresh()
 		m.positionOnWindow(m.initialWinID)
 		m.promptMode = false
@@ -313,14 +298,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m.handlePaste(true)
 
 	case "down":
-		windows := m.lanes[laneOrder[m.colLane]]
+		windows := m.lanes[m.colLane]
 		if m.colWindow < len(windows)-1 {
 			m.colWindow++
 		}
 		return m, m.switchToCurrentCmd()
 
 	case "j":
-		windows := m.lanes[laneOrder[m.colLane]]
+		windows := m.lanes[m.colLane]
 		if m.colWindow < len(windows)-1 {
 			m.colWindow++
 		} else if m.colLane < len(laneOrder)-1 {
@@ -340,7 +325,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			m.colWindow--
 		} else if m.colLane > 0 {
 			m.colLane--
-			windows := m.lanes[laneOrder[m.colLane]]
+			windows := m.lanes[m.colLane]
 			if len(windows) > 0 {
 				m.colWindow = len(windows) - 1
 			} else {
@@ -382,13 +367,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	}
 	if ok {
 		if m.colLane == laneIdx {
-			windows := m.lanes[laneOrder[laneIdx]]
+			windows := m.lanes[laneIdx]
 			if n := len(windows); n > 0 {
 				m.colWindow = (m.colWindow + 1) % n
 			}
 		} else {
 			m.colLane = laneIdx
-			windows := m.lanes[laneOrder[laneIdx]]
+			windows := m.lanes[laneIdx]
 			if len(windows) > 0 && m.colWindow >= len(windows) {
 				m.colWindow = len(windows) - 1
 			}
@@ -403,7 +388,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m *Model) clampColWindow() {
-	windows := m.lanes[laneOrder[m.colLane]]
+	windows := m.lanes[m.colLane]
 	if len(windows) > 0 && m.colWindow >= len(windows) {
 		m.colWindow = len(windows) - 1
 	}
@@ -434,7 +419,7 @@ func (m Model) handleModalDone(msg ModalDoneMsg) (Model, tea.Cmd) {
 
 func (m Model) handleEnterEmpty() (Model, tea.Cmd) {
 	laneKey := m.currentLane()
-	name := "Window " + laneDisplayNames[laneKey]
+	name := "Window " + indexName(laneKey)
 
 	var targetID string
 	position := "a"
@@ -449,10 +434,10 @@ func (m Model) handleEnterEmpty() (Model, tea.Cmd) {
 		exe, _ := os.Executable()
 		content := fmt.Sprintf(
 			"NEWWIN=$(tmux new-window -%s -t '%s' -n %s -c '#{pane_current_path}' -P -F '#{window_id}')\n"+
-				"tmux set-window-option -t \"$NEWWIN\" @hometown_lane '%s'\n"+
+				"tmux set-window-option -t \"$NEWWIN\" @hometown_lane %s\n"+
 				"%s record-window-visit \"$NEWWIN\"\n"+
 				"tmux select-window -t \"$NEWWIN\"\n",
-			position, targetID, shellSingleQuote(name), laneKey, exe)
+			position, targetID, shellSingleQuote(name), storeIndex(laneKey), exe)
 		os.WriteFile(m.commandFile, []byte(content), 0644)
 		return m, tea.Quit
 	}
@@ -463,7 +448,7 @@ func (m Model) handleEnterEmpty() (Model, tea.Cmd) {
 		"-P", "-F", "#{window_id}").Output()
 	if err == nil {
 		newWinID := strings.TrimSpace(string(out))
-		tmuxRun("set-window-option", "-t", newWinID, "@hometown_lane", laneKey)
+		tmuxRun("set-window-option", "-t", newWinID, "@hometown_lane", storeIndex(laneKey))
 		recordWindowVisit(newWinID)
 		tmuxRun("select-window", "-t", newWinID)
 	}
@@ -492,9 +477,9 @@ func (m Model) handleAdd(name string) (Model, tea.Cmd) {
 		exe, _ := os.Executable()
 		content := fmt.Sprintf(
 			"NEWWIN=$(tmux new-window -%s -t '%s' -n %s -c '#{pane_current_path}' -P -F '#{window_id}')\n"+
-				"tmux set-window-option -t \"$NEWWIN\" @hometown_lane '%s'\n"+
+				"tmux set-window-option -t \"$NEWWIN\" @hometown_lane %s\n"+
 				"%s record-window-visit \"$NEWWIN\"\n",
-			position, targetID, shellSingleQuote(name), laneKey, exe)
+			position, targetID, shellSingleQuote(name), storeIndex(laneKey), exe)
 		if m.returnView != "" {
 			content += exe + " show-" + m.returnView + "\n"
 		}
@@ -508,7 +493,7 @@ func (m Model) handleAdd(name string) (Model, tea.Cmd) {
 		"-P", "-F", "#{window_id}").Output()
 	if err == nil {
 		newWinID := strings.TrimSpace(string(out))
-		tmuxRun("set-window-option", "-t", newWinID, "@hometown_lane", laneKey)
+		tmuxRun("set-window-option", "-t", newWinID, "@hometown_lane", storeIndex(laneKey))
 		recordWindowVisit(newWinID)
 	}
 
@@ -603,7 +588,7 @@ func findFallbackTarget(currentSessID string, all []Session) string {
 	// Build a set of other sessions that have a slot assigned.
 	slotted := map[string]bool{}
 	for _, s := range all {
-		if s.ID != currentSessID && getSessionSlotKey(s.ID) != "" {
+		if _, ok := getSessionSlotKey(s.ID); s.ID != currentSessID && ok {
 			slotted[s.ID] = true
 		}
 	}
@@ -649,7 +634,7 @@ func (m Model) handlePaste(before bool) (Model, tea.Cmd) {
 	laneKey := m.currentLane()
 
 	// Change the cut window's lane.
-	tmuxRun("set-window-option", "-t", m.cutWinID, "@hometown_lane", laneKey)
+	tmuxRun("set-window-option", "-t", m.cutWinID, "@hometown_lane", storeIndex(laneKey))
 
 	if target != nil && target.ID != m.cutWinID {
 		if before {
@@ -671,14 +656,14 @@ func (m Model) handlePaste(before bool) (Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) findNextWindow(deletedID, preferLane string) string {
+func (m Model) findNextWindow(deletedID string, preferLane int) string {
 	for _, w := range m.lanes[preferLane] {
 		if w.ID != deletedID {
 			return w.ID
 		}
 	}
-	for _, key := range laneOrder {
-		for _, w := range m.lanes[key] {
+	for i := range laneOrder {
+		for _, w := range m.lanes[i] {
 			if w.ID != deletedID {
 				return w.ID
 			}
@@ -688,16 +673,14 @@ func (m Model) findNextWindow(deletedID, preferLane string) string {
 }
 
 func (m Model) currentWindow() *Window {
-	windows := m.lanes[laneOrder[m.colLane]]
+	windows := m.lanes[m.colLane]
 	if m.colWindow >= 0 && m.colWindow < len(windows) {
 		return &windows[m.colWindow]
 	}
 	return nil
 }
 
-func (m Model) currentLane() string {
-	return laneOrder[m.colLane]
-}
+func (m Model) currentLane() int { return m.colLane }
 
 func (m Model) switchToCurrentCmd() tea.Cmd {
 	w := m.currentWindow()
@@ -749,7 +732,7 @@ func (m Model) viewPrompt() string {
 		}
 	}
 	question := lipgloss.NewStyle().Render(fmt.Sprintf("Assign a lane to window %q?", name))
-	options := hintStyle.Render("[H] [J] [K] [L] [;]  [s]kip  [n]ever")
+	options := hintStyle.Render(promptKeyList() + "  [s]kip  [n]ever")
 	centered := lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(question + "  " + options)
 	return strings.Repeat("\n", m.height/2-1) + centered
 }
@@ -766,7 +749,7 @@ func (m Model) viewDeletedNotice() string {
 func (m Model) countUntracked() int {
 	n := 0
 	for _, w := range m.windows {
-		if w.Lane == "" {
+		if w.Lane < 0 { // unassigned
 			n++
 		}
 	}
@@ -829,7 +812,7 @@ func (m Model) viewColumn() string {
 		} else {
 			s = lipgloss.NewStyle().Width(colWidth).Foreground(lipgloss.Color("246"))
 		}
-		headerSB.WriteString(s.Render(laneDisplayNames[key]))
+		headerSB.WriteString(s.Render(keyDisplay(key)))
 		if li < len(laneOrder)-1 {
 			headerSB.WriteString("  ")
 		}
@@ -841,8 +824,8 @@ func (m Model) viewColumn() string {
 	// Window rows: zip per-lane lines together.
 	var colLines [][]string
 	maxHeight := 0
-	for li, key := range laneOrder {
-		lines := m.renderWindowLines(li, key, colWidth)
+	for li := range laneOrder {
+		lines := m.renderWindowLines(li, colWidth)
 		colLines = append(colLines, lines)
 		if len(lines) > maxHeight {
 			maxHeight = len(lines)
@@ -851,6 +834,9 @@ func (m Model) viewColumn() string {
 
 	emptyCell := strings.Repeat(" ", colWidth)
 	rows := []string{pad + headerSB.String(), ruleRow}
+	if errLine := keysErrorLine(m.width); errLine != "" {
+		rows = append([]string{errLine}, rows...)
+	}
 	for row := 0; row < maxHeight; row++ {
 		var sb strings.Builder
 		for ci, lines := range colLines {
@@ -869,8 +855,8 @@ func (m Model) viewColumn() string {
 	return "\n" + strings.Join(rows, "\n")
 }
 
-func (m Model) renderWindowLines(laneIdx int, key string, colWidth int) []string {
-	windows := m.lanes[key]
+func (m Model) renderWindowLines(laneIdx int, colWidth int) []string {
+	windows := m.lanes[laneIdx]
 	isCursorCol := laneIdx == m.colLane
 
 	plain := lipgloss.NewStyle().Width(colWidth)
