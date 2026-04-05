@@ -324,7 +324,7 @@ func (m AllModel) handleAddSession(name string) (AllModel, tea.Cmd) {
 		exe, _ := os.Executable()
 		content := fmt.Sprintf(
 			"NEWSESS=$(tmux new-session -d -s %s -P -F '#{session_id}' 2>/dev/null || tmux new-session -d -P -F '#{session_id}')\n"+
-				"tmux set-option -t \"$NEWSESS\" @hometown_slot_key %s\n",
+				"tmux set-option -t \"$NEWSESS\" @hometown_slot %s\n",
 			"NEWWIN=$(tmux display-message -t \"$NEWSESS\" -p '#{window_id}')\n"+
 				"%s record-window-visit \"$NEWWIN\"\n"+
 				"%s show-all\n",
@@ -375,7 +375,7 @@ func (m AllModel) handleAddWindow(name string) (AllModel, tea.Cmd) {
 		exe, _ := os.Executable()
 		content := fmt.Sprintf(
 			"NEWWIN=$(tmux new-window -%s -t '%s' -n %s -c '#{pane_current_path}' -P -F '#{window_id}')\n"+
-				"tmux set-window-option -t \"$NEWWIN\" @lane '%s'\n"+
+				"tmux set-window-option -t \"$NEWWIN\" @hometown_lane '%s'\n"+
 				"%s record-window-visit \"$NEWWIN\"\n"+
 				"%s show-all\n",
 			position, targetID, shellSingleQuote(name), laneKey, exe, exe)
@@ -389,7 +389,7 @@ func (m AllModel) handleAddWindow(name string) (AllModel, tea.Cmd) {
 		"-P", "-F", "#{window_id}").Output()
 	if err == nil {
 		newWinID := strings.TrimSpace(string(out))
-		tmuxRun("set-window-option", "-t", newWinID, "@lane", laneKey)
+		tmuxRun("set-window-option", "-t", newWinID, "@hometown_lane", laneKey)
 		recordWindowVisit(newWinID)
 	}
 	m.refresh()
@@ -406,10 +406,10 @@ func (m AllModel) handleEnterEmptySessionWindow() (AllModel, tea.Cmd) {
 		exe, _ := os.Executable()
 		content := fmt.Sprintf(
 			"NEWSESS=$(tmux new-session -d -s %s -P -F '#{session_id}' 2>/dev/null || tmux new-session -d -P -F '#{session_id}')\n"+
-				"tmux set-option -t \"$NEWSESS\" @hometown_slot_key %s\n",
+				"tmux set-option -t \"$NEWSESS\" @hometown_slot %s\n",
 			"NEWWIN=$(tmux display-message -t \"$NEWSESS\" -p '#{window_id}')\n"+
 				"tmux rename-window -t \"$NEWWIN\" %s\n"+
-				"tmux set-window-option -t \"$NEWWIN\" @lane '%s'\n"+
+				"tmux set-window-option -t \"$NEWWIN\" @hometown_lane '%s'\n"+
 				"%s record-window-visit \"$NEWWIN\"\n"+
 				"tmux switch-client -t \"$NEWSESS\"\n",
 			shellSingleQuote(sessName), slotKey, shellSingleQuote(winName), laneKey, exe)
@@ -429,7 +429,7 @@ func (m AllModel) handleEnterEmptySessionWindow() (AllModel, tea.Cmd) {
 	winOut, _ := exec.Command("tmux", "list-windows", "-t", newSessID, "-F", "#{window_id}").Output()
 	if winID := strings.TrimSpace(string(winOut)); winID != "" {
 		tmuxRun("rename-window", "-t", winID, winName)
-		tmuxRun("set-window-option", "-t", winID, "@lane", laneKey)
+		tmuxRun("set-window-option", "-t", winID, "@hometown_lane", laneKey)
 		recordWindowVisit(winID)
 	}
 	tmuxRun("switch-client", "-t", newSessID)
@@ -510,7 +510,7 @@ func (m AllModel) handleRemove() (AllModel, tea.Cmd) {
 		}
 	} else {
 		if w := m.currentWin(); w != nil {
-			exec.Command("tmux", "set-window-option", "-u", "-t", w.ID, "@lane").Run()
+			exec.Command("tmux", "set-window-option", "-u", "-t", w.ID, "@hometown_lane").Run()
 		}
 	}
 	m.refresh()
@@ -540,7 +540,7 @@ func (m AllModel) handlePaste() (AllModel, tea.Cmd) {
 		m.refresh()
 	} else if m.cutWinID != "" && m.curCol != allColSession {
 		laneKey := laneOrder[m.curCol-1]
-		tmuxRun("set-window-option", "-t", m.cutWinID, "@lane", laneKey)
+		tmuxRun("set-window-option", "-t", m.cutWinID, "@hometown_lane", laneKey)
 		m.cutWinID = ""
 		m.refresh()
 	}

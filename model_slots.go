@@ -38,10 +38,9 @@ type SlotsModel struct {
 	returnView  string
 	switchView  string
 
-	// Session to restore on cancel; its slot key is used to patch @hometown_flip_session on confirm.
+	// Session to restore on cancel.
 	initialSessID   string
 	initialSessName string
-	initialSlotKey  string
 
 	width  int
 	height int
@@ -61,7 +60,6 @@ func newSlotsModel(initialSessID, commandFile, returnView, switchView string) (S
 		switchView:      switchView,
 		initialSessID:   initialSessID,
 		initialSessName: sess.Name,
-		initialSlotKey:  getSessionSlotKey(initialSessID),
 		width:           80,
 		height:          24,
 	}
@@ -175,7 +173,6 @@ func (m SlotsModel) handleKey(msg tea.KeyMsg) (SlotsModel, tea.Cmd) {
 		if m.currentSession() == nil {
 			return m.handleEnterEmpty()
 		}
-		m.fixFlipSession()
 		if s := m.currentSession(); s != nil {
 			recordActiveWindowVisit(s.ID)
 		}
@@ -188,7 +185,6 @@ func (m SlotsModel) handleKey(msg tea.KeyMsg) (SlotsModel, tea.Cmd) {
 		return m, tea.Quit
 
 	case "alt+u", "u", "U", "shift+enter":
-		m.fixFlipSession()
 		if m.commandFile != "" {
 			exe, _ := os.Executable()
 			os.WriteFile(m.commandFile, []byte(exe+" show-windows\n"), 0644)
@@ -272,7 +268,6 @@ func (m SlotsModel) handleKey(msg tea.KeyMsg) (SlotsModel, tea.Cmd) {
 	// Shift+key: switch to that slot and show its lanes.
 	if laneIdx, ok := laneKeyLane[msg.String()]; ok && laneKeyShift[msg.String()] {
 		slotKey := slotKeys[laneIdx]
-		m.fixFlipSession()
 		if m.commandFile != "" {
 			exe, _ := os.Executable()
 			content := exe + " switch-session-and-show-lanes " + slotKey + "\n"
@@ -344,7 +339,7 @@ func (m SlotsModel) handleAdd(name string) (SlotsModel, tea.Cmd) {
 		exe, _ := os.Executable()
 		content := fmt.Sprintf(
 			"NEWSESS=$(tmux new-session -d -s %s -P -F '#{session_id}' 2>/dev/null || tmux new-session -d -P -F '#{session_id}')\n"+
-				"tmux set-option -t \"$NEWSESS\" @hometown_slot_key %s\n"+
+				"tmux set-option -t \"$NEWSESS\" @hometown_slot %s\n"+
 				"NEWWIN=$(tmux display-message -t \"$NEWSESS\" -p '#{window_id}')\n"+
 				"%s record-window-visit \"$NEWWIN\"\n",
 			shellSingleQuote(name), key, exe)
@@ -377,8 +372,8 @@ func (m SlotsModel) handleEnterEmpty() (SlotsModel, tea.Cmd) {
 		name := "Session " + slotSessionNames[key]
 		content := fmt.Sprintf(
 			"NEWSESS=$(tmux new-session -d -s %s -P -F '#{session_id}' 2>/dev/null || tmux new-session -d -P -F '#{session_id}')\n"+
-				"tmux set-option -t \"$NEWSESS\" @hometown_slot_key %s\n"+
-				"tmux set-window-option -t \"$NEWSESS\" @lane j\n"+
+				"tmux set-option -t \"$NEWSESS\" @hometown_slot %s\n"+
+				"tmux set-window-option -t \"$NEWSESS\" @hometown_lane j\n"+
 				"tmux switch-client -t \"$NEWSESS\"\n"+
 				"NEWWIN=$(tmux display-message -t \"$NEWSESS\" -p '#{window_id}')\n"+
 				"%s record-window-visit \"$NEWWIN\"\n",
@@ -510,20 +505,6 @@ func (m SlotsModel) switchToCurrentCmd() tea.Cmd {
 		tmuxRun("switch-client", "-t", sessID)
 		return nil
 	}
-}
-
-// fixFlipSession writes @hometown_flip_session with the slot key of the session
-// the user was in when they opened the popup, undoing any pollution from
-// live-preview switches.
-func (m SlotsModel) fixFlipSession() {
-	if m.initialSlotKey == "" {
-		return
-	}
-	// Only write it when the confirmed destination is a different slot.
-	if s := m.currentSession(); s != nil && getSessionSlotKey(s.ID) == m.initialSlotKey {
-		return
-	}
-	tmuxSetGlobalOption("@hometown_flip_session", m.initialSlotKey)
 }
 
 func (m *SlotsModel) refresh() {

@@ -88,7 +88,7 @@ func newModel(initialSessID, initialWinID, commandFile, returnView, switchView s
 		return Model{}, err
 	}
 
-	promptMode := tmuxGetCurrentWindowOption("@lane") == "" &&
+	promptMode := tmuxGetCurrentWindowOption("@hometown_lane") == "" &&
 		tmuxGetCurrentWindowOption("@hometown_lane_never") != "1"
 
 	m := Model{
@@ -198,7 +198,7 @@ func (m Model) handlePromptKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	// Lane keys: assign the chosen lane to the current window.
 	if laneIdx, ok := laneKeyLane[msg.String()]; ok && !laneKeyShift[msg.String()] {
 		key := laneOrder[laneIdx]
-		tmuxRun("set-window-option", "-t", m.initialWinID, "@lane", key)
+		tmuxRun("set-window-option", "-t", m.initialWinID, "@hometown_lane", key)
 		m.refresh()
 		m.positionOnWindow(m.initialWinID)
 		m.promptMode = false
@@ -254,7 +254,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 
 	case "m":
 		if w := m.currentWindow(); w != nil {
-			exec.Command("tmux", "set-window-option", "-u", "-t", w.ID, "@lane").Run()
+			exec.Command("tmux", "set-window-option", "-u", "-t", w.ID, "@hometown_lane").Run()
 			m.refresh()
 		}
 		return m, nil
@@ -380,7 +380,7 @@ func (m Model) handleEnterEmpty() (Model, tea.Cmd) {
 		exe, _ := os.Executable()
 		content := fmt.Sprintf(
 			"NEWWIN=$(tmux new-window -%s -t '%s' -n %s -c '#{pane_current_path}' -P -F '#{window_id}')\n"+
-				"tmux set-window-option -t \"$NEWWIN\" @lane '%s'\n"+
+				"tmux set-window-option -t \"$NEWWIN\" @hometown_lane '%s'\n"+
 				"%s record-window-visit \"$NEWWIN\"\n"+
 				"tmux select-window -t \"$NEWWIN\"\n",
 			position, targetID, shellSingleQuote(name), laneKey, exe)
@@ -394,7 +394,7 @@ func (m Model) handleEnterEmpty() (Model, tea.Cmd) {
 		"-P", "-F", "#{window_id}").Output()
 	if err == nil {
 		newWinID := strings.TrimSpace(string(out))
-		tmuxRun("set-window-option", "-t", newWinID, "@lane", laneKey)
+		tmuxRun("set-window-option", "-t", newWinID, "@hometown_lane", laneKey)
 		recordWindowVisit(newWinID)
 		tmuxRun("select-window", "-t", newWinID)
 	}
@@ -423,7 +423,7 @@ func (m Model) handleAdd(name string) (Model, tea.Cmd) {
 		exe, _ := os.Executable()
 		content := fmt.Sprintf(
 			"NEWWIN=$(tmux new-window -%s -t '%s' -n %s -c '#{pane_current_path}' -P -F '#{window_id}')\n"+
-				"tmux set-window-option -t \"$NEWWIN\" @lane '%s'\n"+
+				"tmux set-window-option -t \"$NEWWIN\" @hometown_lane '%s'\n"+
 				"%s record-window-visit \"$NEWWIN\"\n",
 			position, targetID, shellSingleQuote(name), laneKey, exe)
 		if m.returnView != "" {
@@ -439,7 +439,7 @@ func (m Model) handleAdd(name string) (Model, tea.Cmd) {
 		"-P", "-F", "#{window_id}").Output()
 	if err == nil {
 		newWinID := strings.TrimSpace(string(out))
-		tmuxRun("set-window-option", "-t", newWinID, "@lane", laneKey)
+		tmuxRun("set-window-option", "-t", newWinID, "@hometown_lane", laneKey)
 		recordWindowVisit(newWinID)
 	}
 
@@ -580,7 +580,7 @@ func (m Model) handlePaste(before bool) (Model, tea.Cmd) {
 	laneKey := m.currentLane()
 
 	// Change the cut window's lane.
-	tmuxRun("set-window-option", "-t", m.cutWinID, "@lane", laneKey)
+	tmuxRun("set-window-option", "-t", m.cutWinID, "@hometown_lane", laneKey)
 
 	if target != nil && target.ID != m.cutWinID {
 		if before {

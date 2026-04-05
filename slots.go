@@ -20,16 +20,16 @@ var slotSessionNames = map[string]string{
 
 // getSessionSlotKey returns the slot key assigned to a session, or "".
 func getSessionSlotKey(sessID string) string {
-	return tmuxGetSessionOption(sessID, "@hometown_slot_key")
+	return tmuxGetSessionOption(sessID, "@hometown_slot")
 }
 
 // setSessionSlotKey assigns a session to a slot key, or removes the
 // assignment when key == "".
 func setSessionSlotKey(sessID, key string) error {
 	if key == "" {
-		return exec.Command("tmux", "set-option", "-t", sessID, "-u", "@hometown_slot_key").Run()
+		return exec.Command("tmux", "set-option", "-t", sessID, "-u", "@hometown_slot").Run()
 	}
-	return exec.Command("tmux", "set-option", "-t", sessID, "@hometown_slot_key", key).Run()
+	return exec.Command("tmux", "set-option", "-t", sessID, "@hometown_slot", key).Run()
 }
 
 // getSlotSessions returns all sessions assigned to the given slot key.
@@ -83,7 +83,7 @@ func clearSlotForSession(sessID string) error {
 
 // newSlotSession creates a new detached session for a slot key, naming it
 // "Session <X>" (where X comes from slotSessionNames) if that name is not
-// already taken. The session's initial window is tagged with @lane "j".
+// already taken. The session's initial window is tagged with @hometown_lane "j".
 func newSlotSession(key string) (string, error) {
 	name := "Session " + slotSessionNames[key]
 	out, err := exec.Command("tmux", "new-session", "-d", "-s", name, "-P", "-F", "#{session_id}").Output()
@@ -100,7 +100,7 @@ func newSlotSession(key string) (string, error) {
 	if err == nil {
 		winID := strings.TrimSpace(string(winOut))
 		if winID != "" {
-			exec.Command("tmux", "set-window-option", "-t", winID, "@lane", "j").Run()
+			exec.Command("tmux", "set-window-option", "-t", winID, "@hometown_lane", "j").Run()
 		}
 	}
 	return sessID, nil

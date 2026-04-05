@@ -82,9 +82,9 @@ func listAllSessions() ([]Session, error) {
 }
 
 func loadWindows(sessID string) ([]Window, error) {
-	// #{@lane} comes before #{window_name} so names with spaces are captured by SplitN.
+	// #{@hometown_lane} comes before #{window_name} so names with spaces are captured by SplitN.
 	out, err := exec.Command("tmux", "list-windows", "-t", sessID, "-F",
-		"#{window_id} #{window_index} #{@lane} #{window_name}").Output()
+		"#{window_id} #{window_index} #{@hometown_lane} #{window_name}").Output()
 	if err != nil {
 		return nil, err
 	}
@@ -187,9 +187,9 @@ func tmuxGetCurrentWindowOption(name string) string {
 
 // ── Lane helpers ──────────────────────────────────────────────────────────────
 
-// getCurrentLane returns the @lane option of the currently active window.
+// getCurrentLane returns the @hometown_lane option of the currently active window.
 func getCurrentLane() string {
-	lane := tmuxGetCurrentWindowOption("@lane")
+	lane := tmuxGetCurrentWindowOption("@hometown_lane")
 	if lane == "" {
 		return "j"
 	}

@@ -24,7 +24,8 @@ func main() {
 		fmt.Fprintln(os.Stderr, "          new-window, kill-window, kill-session,")
 		fmt.Fprintln(os.Stderr, "          previous-session, next-session,")
 		fmt.Fprintln(os.Stderr, "          previous-window-in-current-session, next-window-in-current-session,")
-		fmt.Fprintln(os.Stderr, "          previous-window-in-any-session, next-window-in-any-session")
+		fmt.Fprintln(os.Stderr, "          previous-window-in-any-session, next-window-in-any-session,")
+		fmt.Fprintln(os.Stderr, "          record-visit, show-state")
 		os.Exit(1)
 	}
 
@@ -153,6 +154,25 @@ func main() {
 			die("%v", err)
 		}
 
+	case "show-state":
+		if err := cmdShowPopup("state"); err != nil {
+			die("%v", err)
+		}
+
+	case "show-state-body":
+		runStateBody(args)
+
+	case "record-visit":
+		if len(args) >= 1 {
+			recordWindowVisit(args[0])
+		} else {
+			_, winID, err := getCurrentSessionAndWindow()
+			if err != nil {
+				die("%v", err)
+			}
+			recordWindowVisit(winID)
+		}
+
 	// Internal: stamp a window with the current visit time. Used by deferred
 	// shell scripts (commandFile) that create windows outside the Go process.
 	case "record-window-visit":
@@ -215,6 +235,8 @@ func cmdShowPopup(view string) error {
 func writePopupScript(path, view, exe string) error {
 	var body string
 	switch view {
+	case "state":
+		body = fmt.Sprintf("#!/bin/sh\nexec %s show-state-body\n", exe)
 	case "windows":
 		body = fmt.Sprintf(
 			"#!/bin/sh\nexec %s show-windows-body --command-file %s --return-view windows --switch-view sessions\n",
@@ -239,6 +261,13 @@ func buildPopupArgs(view, scriptPath, exe string) []string {
 	base := []string{"display-popup", "-b", "rounded"}
 
 	switch view {
+	case "state":
+		return append(base,
+			"-h", "28",
+			"-w", "90",
+			"-T", "#[align=centre fg=white] Hometown State ",
+			"-EE", scriptPath,
+		)
 	case "windows":
 		height := 12
 		if sessID, _, err := getCurrentSessionAndWindow(); err == nil {
@@ -333,11 +362,11 @@ func cmdSwitchLane(key string) error {
 	}
 
 	currentLane := getCurrentLane()
-	currentLaneIsDefault := tmuxGetCurrentWindowOption("@lane") == ""
+	currentLaneIsDefault := tmuxGetCurrentWindowOption("@hometown_lane") == ""
 
-	// If the current window has no @lane set, assign it now.
+	// If the current window has no @hometown_lane set, assign it now.
 	if currentLaneIsDefault {
-		tmuxRun("set-window-option", "-t", curWinID, "@lane", currentLane)
+		tmuxRun("set-window-option", "-t", curWinID, "@hometown_lane", currentLane)
 	}
 
 	if key == currentLane {
@@ -358,8 +387,6 @@ func cmdSwitchLane(key string) error {
 	}
 
 	// Switching to a different lane.
-	tmuxSetSessionOption(sessID, "@hometown_flip_window", currentLane)
-
 	windows, _ := loadWindows(sessID)
 	if target := mostRecentWindowInLane(windows, key); target != nil {
 		if err := tmuxRun("select-window", "-t", target.ID); err != nil {
@@ -377,47 +404,36 @@ func cmdSwitchLane(key string) error {
 		return err
 	}
 	newWinID := strings.TrimSpace(string(out))
-	tmuxRun("set-window-option", "-t", newWinID, "@lane", key)
+	tmuxRun("set-window-option", "-t", newWinID, "@hometown_lane", key)
 	recordWindowVisit(newWinID)
 	return nil
 }
 
 func cmdFlipWindow() error {
-	sessID, _, err := getCurrentSessionAndWindow()
+	sessID, curWinID, err := getCurrentSessionAndWindow()
 	if err != nil {
 		return err
 	}
-
-	currentLane := getCurrentLane()
-	prevLane := tmuxGetSessionOption(sessID, "@hometown_flip_window")
-
-	if prevLane == "" || prevLane == currentLane {
+	windows, err := listAllWindowVisits()
+	if err != nil {
+		return err
+	}
+	var best *visitedWindow
+	for i := range windows {
+		w := &windows[i]
+		if w.SessionID != sessID || w.WindowID == curWinID {
+			continue
+		}
+		if best == nil || w.Visited > best.Visited {
+			best = &windows[i]
+		}
+	}
+	if best == nil {
 		return tmuxRun("display-message", "No flip window")
 	}
-
-	tmuxSetSessionOption(sessID, "@hometown_flip_window", currentLane)
-
-	tmuxRun("display-message", "[ Window "+laneDisplayLabel(prevLane)+" ]")
-
-	windows, _ := loadWindows(sessID)
-	if target := mostRecentWindowInLane(windows, prevLane); target != nil {
-		if err := tmuxRun("select-window", "-t", target.ID); err != nil {
-			return err
-		}
-		recordWindowVisit(target.ID)
-		return nil
-	}
-
-	// No window in previous target lane — create one.
-	out, err := exec.Command("tmux", "new-window",
-		"-c", "#{pane_current_path}",
-		"-P", "-F", "#{window_id}").Output()
-	if err != nil {
+	if err := tmuxRun("select-window", "-t", best.WindowID); err != nil {
 		return err
 	}
-	newWinID := strings.TrimSpace(string(out))
-	tmuxRun("set-window-option", "-t", newWinID, "@lane", prevLane)
-	recordWindowVisit(newWinID)
 	return nil
 }
 
@@ -433,7 +449,7 @@ func cmdNewWindow() error {
 		return err
 	}
 	newWinID := strings.TrimSpace(string(out))
-	tmuxRun("set-window-option", "-t", newWinID, "@lane", currentLane)
+	tmuxRun("set-window-option", "-t", newWinID, "@hometown_lane", currentLane)
 	recordWindowVisit(newWinID)
 	return nil
 }
@@ -498,19 +514,19 @@ func cmdKillSession() error {
 }
 
 func cmdTagNewWindow() error {
-	existing := tmuxGetCurrentWindowOption("@lane")
+	existing := tmuxGetCurrentWindowOption("@hometown_lane")
 	if existing != "" {
 		return nil
 	}
 	// Inherit lane from the previous window, defaulting to "j".
-	out, err := exec.Command("tmux", "show-option", "-wqv", "-t", "{last}", "@lane").Output()
+	out, err := exec.Command("tmux", "show-option", "-wqv", "-t", "{last}", "@hometown_lane").Output()
 	lane := "j"
 	if err == nil {
 		if l := strings.TrimSpace(string(out)); l != "" {
 			lane = l
 		}
 	}
-	return exec.Command("tmux", "set-option", "-w", "@lane", lane).Run()
+	return exec.Command("tmux", "set-option", "-w", "@hometown_lane", lane).Run()
 }
 
 // ── Slot commands ─────────────────────────────────────────────────────────────
@@ -519,11 +535,6 @@ func cmdSwitchSlot(key string) error {
 	currentSessID, _, err := getCurrentSessionAndWindow()
 	if err != nil {
 		return err
-	}
-
-	currentKey := slotKeyForSession(currentSessID)
-	if currentKey != "" && currentKey != key {
-		tmuxSetGlobalOption("@hometown_flip_session", currentKey)
 	}
 
 	sessions := getSlotSessions(key)
@@ -577,15 +588,8 @@ func cmdSwitchSlot(key string) error {
 // its format-string expansion use the correct session context rather than
 // the inherited $TMUX_PANE from the original session.
 func cmdSwitchSlotAndShowLanes(key string) error {
-	currentSessID, _, err := getCurrentSessionAndWindow()
-	if err != nil {
+	if _, _, err := getCurrentSessionAndWindow(); err != nil {
 		return err
-	}
-
-	// Update flip-session tracking.
-	currentKey := slotKeyForSession(currentSessID)
-	if currentKey != "" && currentKey != key {
-		tmuxSetGlobalOption("@hometown_flip_session", currentKey)
 	}
 
 	// Get or create the target session (use first in the slot).
@@ -594,6 +598,7 @@ func cmdSwitchSlotAndShowLanes(key string) error {
 	if len(sessions) > 0 {
 		targetSessID = sessions[0].ID
 	} else {
+		var err error
 		targetSessID, err = newSlotSession(key)
 		if err != nil {
 			return err
@@ -642,11 +647,32 @@ func cmdSwitchSlotAndShowLanes(key string) error {
 }
 
 func cmdFlipSession() error {
-	prevKey := tmuxGetGlobalOption("@hometown_flip_session")
-	if prevKey == "" {
+	sessID, _, err := getCurrentSessionAndWindow()
+	if err != nil {
+		return err
+	}
+	windows, err := listAllWindowVisits()
+	if err != nil {
+		return err
+	}
+	var best *visitedWindow
+	for i := range windows {
+		w := &windows[i]
+		if w.SessionID == sessID {
+			continue
+		}
+		if best == nil || w.Visited > best.Visited {
+			best = &windows[i]
+		}
+	}
+	if best == nil {
 		return tmuxRun("display-message", "No flip session")
 	}
-	return cmdSwitchSlot(prevKey)
+	if err := switchToWindow(best); err != nil {
+		return err
+	}
+	return nil
+	return nil
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
