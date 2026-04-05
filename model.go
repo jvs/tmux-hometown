@@ -24,7 +24,7 @@ var (
 	dimStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
 	hintStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("239"))
 	guideStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	cursorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
+	cursorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
 )
 
 // laneKeyLane maps h/j/k/l/;/H/J/K/L/: to their lane index (0–4).
