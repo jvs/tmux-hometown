@@ -9,7 +9,7 @@ import (
 
 var version = "dev"
 
-const popupCmdFile = "/tmp/hometown_command"
+var popupCmdFile = fmt.Sprintf("/tmp/hometown_%d_command", os.Getuid())
 
 func main() {
 	if len(os.Args) == 2 && (os.Args[1] == "--version" || os.Args[1] == "version") {
@@ -300,7 +300,7 @@ func cmdShowPopup(view string) error {
 	}
 
 	// Write body script (avoids shell quoting issues with multi-word flags).
-	scriptPath := "/tmp/hometown_" + view + "_popup.sh"
+	scriptPath := fmt.Sprintf("/tmp/hometown_%d_%s_popup.sh", os.Getuid(), view)
 	if err := writePopupScript(scriptPath, view, exe); err != nil {
 		return fmt.Errorf("writing popup script: %w", err)
 	}
@@ -732,7 +732,7 @@ func cmdSwitchSlotAndShowLanes(key int) error {
 		exe = "hometown"
 	}
 
-	scriptPath := "/tmp/hometown_windows_popup.sh"
+	scriptPath := fmt.Sprintf("/tmp/hometown_%d_windows_popup.sh", os.Getuid())
 	if err := writePopupScript(scriptPath, "windows", exe); err != nil {
 		return err
 	}
