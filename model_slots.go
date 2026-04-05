@@ -36,7 +36,6 @@ type SlotsModel struct {
 	// Command file for deferred operations
 	commandFile        string
 	returnView         string
-	switchView         string
 	activationKey      string
 	shiftActivationKey string
 	cyclePattern       string
@@ -49,7 +48,7 @@ type SlotsModel struct {
 	height int
 }
 
-func newSlotsModel(initialSessID, commandFile, returnView, switchView, activationKey, shiftActivationKey, cyclePattern string) (SlotsModel, error) {
+func newSlotsModel(initialSessID, commandFile, returnView, activationKey, shiftActivationKey, cyclePattern string) (SlotsModel, error) {
 	_, hasSlot := getSessionSlotKey(initialSessID)
 	promptMode := !hasSlot &&
 		tmuxGetSessionOption(initialSessID, "@hometown_slot_never") != "1"
@@ -61,7 +60,6 @@ func newSlotsModel(initialSessID, commandFile, returnView, switchView, activatio
 		promptMode:         promptMode,
 		commandFile:        commandFile,
 		returnView:         returnView,
-		switchView:         switchView,
 		activationKey:      activationKey,
 		shiftActivationKey: shiftActivationKey,
 		cyclePattern:       cyclePattern,
@@ -216,13 +214,6 @@ func (m SlotsModel) handleKey(msg tea.KeyMsg) (SlotsModel, tea.Cmd) {
 		if m.commandFile != "" {
 			exe, _ := os.Executable()
 			os.WriteFile(m.commandFile, []byte(exe+" show-windows\n"), 0644)
-		}
-		return m, tea.Quit
-
-	case "alt+o":
-		if m.switchView != "" && m.commandFile != "" {
-			exe, _ := os.Executable()
-			os.WriteFile(m.commandFile, []byte(exe+" show-"+m.switchView+"\n"), 0644)
 		}
 		return m, tea.Quit
 
@@ -745,7 +736,6 @@ func runSlotsBody(args []string) {
 	fs := flag.NewFlagSet("show-sessions-body", flag.ExitOnError)
 	commandFile := fs.String("command-file", "", "write command here")
 	returnView := fs.String("return-view", "", "view name to reopen after add-session")
-	switchView := fs.String("switch-view", "", "view name to switch to via alt+o")
 	fs.Parse(args)
 
 	initialSessID, _, err := getCurrentSessionAndWindow()
@@ -759,7 +749,7 @@ func runSlotsBody(args []string) {
 		activationKey = "u"
 	}
 
-	m, err := newSlotsModel(initialSessID, *commandFile, *returnView, *switchView, activationKey, shiftOf(activationKey), getCyclePattern())
+	m, err := newSlotsModel(initialSessID, *commandFile, *returnView, activationKey, shiftOf(activationKey), getCyclePattern())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "hometown: %v\n", err)
 		os.Exit(1)

@@ -80,7 +80,6 @@ type Model struct {
 	// Command file for deferred add-window (when running as a popup)
 	commandFile        string
 	returnView         string // view name to reopen after add-window (e.g. "windows")
-	switchView         string // view name to switch to via alt+o (e.g. "sessions")
 	activationKey      string // key that switches between popups
 	shiftActivationKey string
 	cyclePattern       string
@@ -96,7 +95,7 @@ type Model struct {
 	height int
 }
 
-func newModel(initialSessID, initialWinID, commandFile, returnView, switchView, activationKey, shiftActivationKey, cyclePattern string) (Model, error) {
+func newModel(initialSessID, initialWinID, commandFile, returnView, activationKey, shiftActivationKey, cyclePattern string) (Model, error) {
 	sess, err := loadSession(initialSessID)
 	if err != nil {
 		return Model{}, err
@@ -116,7 +115,6 @@ func newModel(initialSessID, initialWinID, commandFile, returnView, switchView, 
 		promptMode:         promptMode,
 		commandFile:        commandFile,
 		returnView:         returnView,
-		switchView:         switchView,
 		activationKey:      activationKey,
 		shiftActivationKey: shiftActivationKey,
 		cyclePattern:       cyclePattern,
@@ -213,13 +211,6 @@ func (m Model) handlePromptKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	key := msg.String()
 	if key == "alt+"+m.activationKey {
 		tmuxRun("switch-client", "-t", m.session.ID+":"+m.initialWinID)
-		return m, tea.Quit
-	}
-	if key == "alt+o" || key == "alt+"+m.shiftActivationKey {
-		if m.switchView != "" && m.commandFile != "" {
-			exe, _ := os.Executable()
-			os.WriteFile(m.commandFile, []byte(exe+" show-"+m.switchView+"\n"), 0644)
-		}
 		return m, tea.Quit
 	}
 	// Activation key / tab: cycle through popups.
@@ -351,13 +342,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	key := msg.String()
 	if key == "alt+"+m.activationKey {
 		tmuxRun("switch-client", "-t", m.session.ID+":"+m.initialWinID)
-		return m, tea.Quit
-	}
-	if key == "alt+o" || key == "alt+"+m.shiftActivationKey {
-		if m.switchView != "" && m.commandFile != "" {
-			exe, _ := os.Executable()
-			os.WriteFile(m.commandFile, []byte(exe+" show-"+m.switchView+"\n"), 0644)
-		}
 		return m, tea.Quit
 	}
 	// Activation key / tab: cycle through popups.
@@ -923,7 +907,6 @@ func runWindowsBody(args []string) {
 	fs := flag.NewFlagSet("show-windows-body", flag.ExitOnError)
 	commandFile := fs.String("command-file", "", "write add-window command here instead of running it")
 	returnView := fs.String("return-view", "", "view name to reopen after add-window")
-	switchView := fs.String("switch-view", "", "view name to switch to via alt+o")
 	fs.Parse(args)
 
 	initialSessID, initialWinID, err := getCurrentSessionAndWindow()
@@ -937,7 +920,7 @@ func runWindowsBody(args []string) {
 		activationKey = "u"
 	}
 
-	m, err := newModel(initialSessID, initialWinID, *commandFile, *returnView, *switchView, activationKey, shiftOf(activationKey), getCyclePattern())
+	m, err := newModel(initialSessID, initialWinID, *commandFile, *returnView, activationKey, shiftOf(activationKey), getCyclePattern())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "hometown: %v\n", err)
 		os.Exit(1)

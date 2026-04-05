@@ -329,11 +329,11 @@ func writePopupScript(path, view, exe string) error {
 			exe, popupCmdFile)
 	case "windows":
 		body = fmt.Sprintf(
-			"#!/bin/sh\nexec %s show-windows-body --command-file %s --return-view windows --switch-view sessions\n",
+			"#!/bin/sh\nexec %s show-windows-body --command-file %s --return-view windows\n",
 			exe, popupCmdFile)
 	case "sessions":
 		body = fmt.Sprintf(
-			"#!/bin/sh\nexec %s show-sessions-body --command-file %s --return-view sessions --switch-view windows\n",
+			"#!/bin/sh\nexec %s show-sessions-body --command-file %s --return-view sessions\n",
 			exe, popupCmdFile)
 	case "grid":
 		body = fmt.Sprintf(
