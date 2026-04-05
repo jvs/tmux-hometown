@@ -33,7 +33,7 @@ type StateModel struct {
 func newStateModel(commandFile, activationKey, shiftActivationKey string) StateModel {
 	return StateModel{
 		lines:              buildStateLines(),
-		width:              90,
+		width:              88,
 		height:             22,
 		commandFile:        commandFile,
 		activationKey:      activationKey,
@@ -87,11 +87,11 @@ func (m StateModel) handleKey(msg tea.KeyMsg) (StateModel, tea.Cmd) {
 	case "g":
 		m.offset = 0
 	}
-	// Activation key: plain → show-grid; shift → show-windows.
+	// Activation key: plain → show-history; shift → show-windows.
 	if msg.String() == m.activationKey {
 		if m.commandFile != "" {
 			exe, _ := os.Executable()
-			os.WriteFile(m.commandFile, []byte(exe+" show-grid\n"), 0644)
+			os.WriteFile(m.commandFile, []byte(exe+" show-history\n"), 0644)
 		}
 		return m, tea.Quit
 	}
@@ -148,7 +148,7 @@ func (m StateModel) View() string {
 // ── Data gathering ────────────────────────────────────────────────────────────
 
 func buildStateLines() []string {
-	const ruleWidth = 84
+	const ruleWidth = 82
 	rule := "   " + stateRuleStyle.Render(strings.Repeat("─", ruleWidth))
 
 	var lines []string

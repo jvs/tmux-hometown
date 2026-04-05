@@ -106,7 +106,7 @@ func newAllModel(initialSessID, initialWinID, commandFile, activationKey, shiftA
 		shiftActivationKey: shiftActivationKey,
 		initialSessID:      initialSessID,
 		initialWinID:       initialWinID,
-		width:              90,
+		width:              89,
 		height:             18,
 	}
 	for i, row := range m.rows {
@@ -243,7 +243,7 @@ func (m AllModel) handleKey(msg tea.KeyMsg) (AllModel, tea.Cmd) {
 		return m.handlePaste()
 	}
 
-	// Activation key: plain → show-sessions; shift → show-state.
+	// Activation key: plain → show-sessions; shift → show-history.
 	if msg.String() == m.activationKey {
 		if m.commandFile != "" {
 			exe, _ := os.Executable()
@@ -254,7 +254,7 @@ func (m AllModel) handleKey(msg tea.KeyMsg) (AllModel, tea.Cmd) {
 	if msg.String() == m.shiftActivationKey {
 		if m.commandFile != "" {
 			exe, _ := os.Executable()
-			os.WriteFile(m.commandFile, []byte(exe+" show-state\n"), 0644)
+			os.WriteFile(m.commandFile, []byte(exe+" show-history\n"), 0644)
 		}
 		return m, tea.Quit
 	}

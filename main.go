@@ -147,6 +147,14 @@ func main() {
 			die("%v", err)
 		}
 
+	case "show-history":
+		if err := cmdShowPopup("history"); err != nil {
+			die("%v", err)
+		}
+
+	case "show-history-body":
+		runHistoryBody(args)
+
 	case "show-state":
 		if err := cmdShowPopup("state"); err != nil {
 			die("%v", err)
@@ -220,7 +228,8 @@ func printUsage() {
 				{"show-windows", "Open (or close) the windows popup"},
 				{"show-sessions", "Open (or close) the sessions popup"},
 				{"show-grid", "Open (or close) the grid popup"},
-				{"show-state", "Open (or close) the state popup (debug view)"},
+				{"show-history", "Open (or close) the history popup"},
+			{"show-state", "Open (or close) the state popup (debug view)"},
 			},
 		},
 		{
@@ -310,6 +319,9 @@ func cmdShowPopup(view string) error {
 func writePopupScript(path, view, exe string) error {
 	var body string
 	switch view {
+	case "history":
+		body = fmt.Sprintf("#!/bin/sh\nexec %s show-history-body --command-file %s\n",
+			exe, popupCmdFile)
 	case "state":
 		body = fmt.Sprintf("#!/bin/sh\nexec %s show-state-body --command-file %s\n",
 			exe, popupCmdFile)
@@ -337,6 +349,14 @@ func buildPopupArgs(view, scriptPath, exe string) []string {
 	base := []string{"display-popup", "-b", "rounded"}
 
 	switch view {
+	case "history":
+		height := calcHistoryHeight()
+		return append(base,
+			"-h", fmt.Sprintf("%d", height),
+			"-w", "73",
+			"-T", "#[align=centre fg=white] Hometown History ",
+			"-EE", scriptPath,
+		)
 	case "state":
 		return append(base,
 			"-h", "28",
@@ -368,7 +388,7 @@ func buildPopupArgs(view, scriptPath, exe string) []string {
 	case "grid":
 		return append(base,
 			"-h", "12",
-			"-w", "90",
+			"-w", "91",
 			"-T", "#[align=centre fg=white] Hometown Grid ",
 			"-EE", scriptPath,
 		)
