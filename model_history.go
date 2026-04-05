@@ -60,7 +60,10 @@ func newHistoryModel(commandFile, activationKey, shiftActivationKey, cyclePatter
 		return HistoryModel{}, err
 	}
 
-	initialSessID, initialWinID, _ := getCurrentSessionAndWindow()
+	initialSessID, initialWinID, err := getCurrentSessionAndWindow()
+	if err != nil {
+		return HistoryModel{}, err
+	}
 
 	return HistoryModel{
 		entries:            entries,
