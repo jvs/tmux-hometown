@@ -229,7 +229,7 @@ func printUsage() {
 				{"show-sessions", "Open (or close) the sessions popup"},
 				{"show-grid", "Open (or close) the grid popup"},
 				{"show-history", "Open (or close) the history popup"},
-			{"show-state", "Open (or close) the state popup (debug view)"},
+				{"show-state", "Open (or close) the state popup (debug view)"},
 			},
 		},
 		{
