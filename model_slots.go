@@ -34,9 +34,11 @@ type SlotsModel struct {
 	promptMode bool
 
 	// Command file for deferred operations
-	commandFile string
-	returnView  string
-	switchView  string
+	commandFile        string
+	returnView         string
+	switchView         string
+	activationKey      string
+	shiftActivationKey string
 
 	// Session to restore on cancel.
 	initialSessID   string
@@ -46,7 +48,7 @@ type SlotsModel struct {
 	height int
 }
 
-func newSlotsModel(initialSessID, commandFile, returnView, switchView string) (SlotsModel, error) {
+func newSlotsModel(initialSessID, commandFile, returnView, switchView, activationKey, shiftActivationKey string) (SlotsModel, error) {
 	promptMode := getSessionSlotKey(initialSessID) == "" &&
 		tmuxGetSessionOption(initialSessID, "@hometown_slot_never") != "1"
 
@@ -55,9 +57,11 @@ func newSlotsModel(initialSessID, commandFile, returnView, switchView string) (S
 	m := SlotsModel{
 		slots:           groupBySlot(),
 		promptMode:      promptMode,
-		commandFile:     commandFile,
-		returnView:      returnView,
-		switchView:      switchView,
+		commandFile:        commandFile,
+		returnView:         returnView,
+		switchView:         switchView,
+		activationKey:      activationKey,
+		shiftActivationKey: shiftActivationKey,
 		initialSessID:   initialSessID,
 		initialSessName: sess.Name,
 		width:           80,
@@ -147,7 +151,15 @@ func (m SlotsModel) handlePromptKey(msg tea.KeyMsg) (SlotsModel, tea.Cmd) {
 			tmuxRun("switch-client", "-t", m.initialSessID)
 		}
 		return m, tea.Quit
-	case "alt+u", "u", "U", "shift+enter":
+	case "alt+u", "shift+enter":
+		if m.commandFile != "" {
+			exe, _ := os.Executable()
+			os.WriteFile(m.commandFile, []byte(exe+" show-windows\n"), 0644)
+		}
+		return m, tea.Quit
+	}
+	// Activation key: plain → show-windows, shift → show-sessions (prompt).
+	if msg.String() == m.activationKey {
 		if m.commandFile != "" {
 			exe, _ := os.Executable()
 			os.WriteFile(m.commandFile, []byte(exe+" show-windows\n"), 0644)
@@ -184,7 +196,7 @@ func (m SlotsModel) handleKey(msg tea.KeyMsg) (SlotsModel, tea.Cmd) {
 		}
 		return m, tea.Quit
 
-	case "alt+u", "u", "U", "shift+enter":
+	case "alt+u", "shift+enter":
 		if m.commandFile != "" {
 			exe, _ := os.Executable()
 			os.WriteFile(m.commandFile, []byte(exe+" show-windows\n"), 0644)
@@ -287,6 +299,22 @@ func (m SlotsModel) handleKey(msg tea.KeyMsg) (SlotsModel, tea.Cmd) {
 			m.clampColRow()
 		}
 		return m, m.switchToCurrentCmd()
+	}
+
+	// Activation key: plain → show-windows; shift → show-grid.
+	if msg.String() == m.activationKey {
+		if m.commandFile != "" {
+			exe, _ := os.Executable()
+			os.WriteFile(m.commandFile, []byte(exe+" show-windows\n"), 0644)
+		}
+		return m, tea.Quit
+	}
+	if msg.String() == m.shiftActivationKey {
+		if m.commandFile != "" {
+			exe, _ := os.Executable()
+			os.WriteFile(m.commandFile, []byte(exe+" show-grid\n"), 0644)
+		}
+		return m, tea.Quit
 	}
 
 	// alt+hjkl/;, alt+shift+hjkl/:, or shift+hjkl/: — jump to that slot column (or cycle within if already there).
@@ -702,7 +730,12 @@ func runSlotsBody(args []string) {
 		os.Exit(1)
 	}
 
-	m, err := newSlotsModel(initialSessID, *commandFile, *returnView, *switchView)
+	activationKey := tmuxGetGlobalOption("@hometown_activation_key")
+	if activationKey == "" {
+		activationKey = "u"
+	}
+
+	m, err := newSlotsModel(initialSessID, *commandFile, *returnView, *switchView, activationKey, shiftOf(activationKey))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "hometown: %v\n", err)
 		os.Exit(1)

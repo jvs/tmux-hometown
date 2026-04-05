@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -20,17 +21,23 @@ var (
 // StateModel is a read-only, scrollable view of every hometown option value
 // stored in the running tmux server — useful for debugging configuration.
 type StateModel struct {
-	lines  []string
-	offset int // index of first visible line
-	width  int
-	height int
+	lines              []string
+	offset             int // index of first visible line
+	width              int
+	height             int
+	commandFile        string
+	activationKey      string
+	shiftActivationKey string
 }
 
-func newStateModel() StateModel {
+func newStateModel(commandFile, activationKey, shiftActivationKey string) StateModel {
 	return StateModel{
-		lines:  buildStateLines(),
-		width:  90,
-		height: 22,
+		lines:              buildStateLines(),
+		width:              90,
+		height:             22,
+		commandFile:        commandFile,
+		activationKey:      activationKey,
+		shiftActivationKey: shiftActivationKey,
 	}
 }
 
@@ -79,6 +86,21 @@ func (m StateModel) handleKey(msg tea.KeyMsg) (StateModel, tea.Cmd) {
 		m.offset = maxOffset
 	case "g":
 		m.offset = 0
+	}
+	// Activation key: plain → show-grid; shift → show-windows.
+	if msg.String() == m.activationKey {
+		if m.commandFile != "" {
+			exe, _ := os.Executable()
+			os.WriteFile(m.commandFile, []byte(exe+" show-grid\n"), 0644)
+		}
+		return m, tea.Quit
+	}
+	if msg.String() == m.shiftActivationKey {
+		if m.commandFile != "" {
+			exe, _ := os.Executable()
+			os.WriteFile(m.commandFile, []byte(exe+" show-windows\n"), 0644)
+		}
+		return m, tea.Quit
 	}
 	return m, nil
 }
@@ -279,8 +301,17 @@ func splitTabLines(s string, n int) [][]string {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-func runStateBody(_ []string) {
-	m := newStateModel()
+func runStateBody(args []string) {
+	fs := flag.NewFlagSet("show-state-body", flag.ExitOnError)
+	commandFile := fs.String("command-file", "", "write deferred commands here")
+	fs.Parse(args)
+
+	activationKey := tmuxGetGlobalOption("@hometown_activation_key")
+	if activationKey == "" {
+		activationKey = "u"
+	}
+
+	m := newStateModel(*commandFile, activationKey, shiftOf(activationKey))
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "hometown: %v\n", err)

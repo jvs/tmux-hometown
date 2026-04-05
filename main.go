@@ -20,7 +20,7 @@ func main() {
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "Usage: hometown <command> [args]")
 		fmt.Fprintln(os.Stderr, "Commands: switch-window, switch-session, flip-window, flip-session,")
-		fmt.Fprintln(os.Stderr, "          show-windows, show-sessions, show-all,")
+		fmt.Fprintln(os.Stderr, "          show-windows, show-sessions, show-grid,")
 		fmt.Fprintln(os.Stderr, "          new-window, kill-window, kill-session,")
 		fmt.Fprintln(os.Stderr, "          previous-session, next-session,")
 		fmt.Fprintln(os.Stderr, "          previous-window-in-current-session, next-window-in-current-session,")
@@ -87,8 +87,8 @@ func main() {
 			die("%v", err)
 		}
 
-	case "show-all":
-		if err := cmdShowPopup("all"); err != nil {
+	case "show-grid":
+		if err := cmdShowPopup("grid"); err != nil {
 			die("%v", err)
 		}
 
@@ -116,8 +116,8 @@ func main() {
 	case "show-sessions-body":
 		runSlotsBody(args)
 
-	case "show-all-body":
-		runAllBody(args)
+	case "show-grid-body":
+		runGridBody(args)
 
 	case "tag-new-window":
 		if err := cmdTagNewWindow(); err != nil {
@@ -236,7 +236,8 @@ func writePopupScript(path, view, exe string) error {
 	var body string
 	switch view {
 	case "state":
-		body = fmt.Sprintf("#!/bin/sh\nexec %s show-state-body\n", exe)
+		body = fmt.Sprintf("#!/bin/sh\nexec %s show-state-body --command-file %s\n",
+			exe, popupCmdFile)
 	case "windows":
 		body = fmt.Sprintf(
 			"#!/bin/sh\nexec %s show-windows-body --command-file %s --return-view windows --switch-view sessions\n",
@@ -245,9 +246,9 @@ func writePopupScript(path, view, exe string) error {
 		body = fmt.Sprintf(
 			"#!/bin/sh\nexec %s show-sessions-body --command-file %s --return-view sessions\n",
 			exe, popupCmdFile)
-	case "all":
+	case "grid":
 		body = fmt.Sprintf(
-			"#!/bin/sh\nexec %s show-all-body --command-file %s\n",
+			"#!/bin/sh\nexec %s show-grid-body --command-file %s\n",
 			exe, popupCmdFile)
 	default:
 	}
@@ -285,15 +286,15 @@ func buildPopupArgs(view, scriptPath, exe string) []string {
 		return append(base,
 			"-h", fmt.Sprintf("%d", height),
 			"-w", "90",
-			"-T", "#[align=centre fg=white] Sessions ",
+			"-T", "#[align=centre fg=white] Hometown Sessions ",
 			"-EE", scriptPath,
 		)
 
-	case "all":
+	case "grid":
 		return append(base,
 			"-h", "12",
 			"-w", "90",
-			"-T", "#[align=centre fg=white] Hometown Sessions ",
+			"-T", "#[align=centre fg=white] Hometown Grid ",
 			"-EE", scriptPath,
 		)
 

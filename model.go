@@ -48,6 +48,15 @@ var altShiftLaneKeyLane = map[string]int{
 	"alt+H": 0, "alt+J": 1, "alt+K": 2, "alt+L": 3, "alt+:": 4,
 }
 
+// shiftOf returns the shift variant of a single-character activation key.
+// Letter keys return their uppercase form; ";" returns ":".
+func shiftOf(key string) string {
+	if key == ";" {
+		return ":"
+	}
+	return strings.ToUpper(key)
+}
+
 type Model struct {
 	session Session
 	windows []Window
@@ -73,9 +82,11 @@ type Model struct {
 	promptMode bool
 
 	// Command file for deferred add-window (when running as a popup)
-	commandFile string
-	returnView  string // view name to reopen after add-window (e.g. "windows")
-	switchView  string // view name to switch to via alt+o (e.g. "sessions")
+	commandFile       string
+	returnView        string // view name to reopen after add-window (e.g. "windows")
+	switchView        string // view name to switch to via alt+o (e.g. "sessions")
+	activationKey     string // key that switches between popups
+	shiftActivationKey string
 
 	// Window to restore on cancel
 	initialWinID string
@@ -88,7 +99,7 @@ type Model struct {
 	height int
 }
 
-func newModel(initialSessID, initialWinID, commandFile, returnView, switchView string) (Model, error) {
+func newModel(initialSessID, initialWinID, commandFile, returnView, switchView, activationKey, shiftActivationKey string) (Model, error) {
 	sess, err := loadSession(initialSessID)
 	if err != nil {
 		return Model{}, err
@@ -106,9 +117,11 @@ func newModel(initialSessID, initialWinID, commandFile, returnView, switchView s
 		windows:      windows,
 		lanes:        groupByLane(windows),
 		promptMode:   promptMode,
-		commandFile:  commandFile,
-		returnView:   returnView,
-		switchView:   switchView,
+		commandFile:        commandFile,
+		returnView:         returnView,
+		switchView:         switchView,
+		activationKey:      activationKey,
+		shiftActivationKey: shiftActivationKey,
 		initialWinID: initialWinID,
 		width:        80,
 		height:       24,
@@ -198,7 +211,15 @@ func (m Model) handlePromptKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	case "esc", "alt+u":
 		tmuxRun("switch-client", "-t", m.session.ID+":"+m.initialWinID)
 		return m, tea.Quit
-	case "alt+o", "alt+U", "u", "U":
+	case "alt+o", "alt+U":
+		if m.commandFile != "" {
+			exe, _ := os.Executable()
+			os.WriteFile(m.commandFile, []byte(exe+" show-sessions\n"), 0644)
+		}
+		return m, tea.Quit
+	}
+	// Activation key (plain or shift): switch to show-sessions.
+	if key := msg.String(); key == m.activationKey || key == m.shiftActivationKey {
 		if m.commandFile != "" {
 			exe, _ := os.Executable()
 			os.WriteFile(m.commandFile, []byte(exe+" show-sessions\n"), 0644)
@@ -232,7 +253,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		tmuxRun("switch-client", "-t", m.session.ID+":"+m.initialWinID)
 		return m, tea.Quit
 
-	case "alt+o", "alt+U", "u", "U":
+	case "alt+o", "alt+U":
 		if m.commandFile != "" {
 			exe, _ := os.Executable()
 			os.WriteFile(m.commandFile, []byte(exe+" show-sessions\n"), 0644)
@@ -331,6 +352,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			m.clampColWindow()
 		}
 		return m, m.switchToCurrentCmd()
+	}
+
+	// Activation key (plain or shift): switch to show-sessions.
+	if key := msg.String(); key == m.activationKey || key == m.shiftActivationKey {
+		if m.commandFile != "" {
+			exe, _ := os.Executable()
+			os.WriteFile(m.commandFile, []byte(exe+" show-sessions\n"), 0644)
+		}
+		return m, tea.Quit
 	}
 
 	// alt+hjkl/;, alt+shift+hjkl/:, or shift+hjkl/: — jump to that lane (or cycle if already there).
@@ -898,7 +928,12 @@ func runWindowsBody(args []string) {
 		os.Exit(1)
 	}
 
-	m, err := newModel(initialSessID, initialWinID, *commandFile, *returnView, *switchView)
+	activationKey := tmuxGetGlobalOption("@hometown_activation_key")
+	if activationKey == "" {
+		activationKey = "u"
+	}
+
+	m, err := newModel(initialSessID, initialWinID, *commandFile, *returnView, *switchView, activationKey, shiftOf(activationKey))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "hometown: %v\n", err)
 		os.Exit(1)

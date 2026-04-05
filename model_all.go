@@ -35,7 +35,7 @@ var (
 
 // ── Data types ────────────────────────────────────────────────────────────────
 
-// allRow holds one row of the show-all table: one slot and the
+// allRow holds one row of the show-grid table: one slot and the
 // first window in each lane for the primary session assigned to that slot.
 type allRow struct {
 	slotKey string
@@ -43,7 +43,7 @@ type allRow struct {
 	windows map[string]Window // lane key → first window in that lane
 }
 
-// AllModel is the TUI model for show-all.
+// AllModel is the TUI model for show-grid.
 type AllModel struct {
 	rows []allRow
 
@@ -60,9 +60,11 @@ type AllModel struct {
 
 	modal tea.Model
 
-	commandFile   string
-	initialSessID string
-	initialWinID  string
+	commandFile        string
+	initialSessID      string
+	initialWinID       string
+	activationKey      string
+	shiftActivationKey string
 
 	width  int
 	height int
@@ -96,10 +98,12 @@ func loadAllRows() []allRow {
 	return rows
 }
 
-func newAllModel(initialSessID, initialWinID, commandFile string) AllModel {
+func newAllModel(initialSessID, initialWinID, commandFile, activationKey, shiftActivationKey string) AllModel {
 	m := AllModel{
 		rows:          loadAllRows(),
-		commandFile:   commandFile,
+		commandFile:        commandFile,
+		activationKey:      activationKey,
+		shiftActivationKey: shiftActivationKey,
 		initialSessID: initialSessID,
 		initialWinID:  initialWinID,
 		width:         90,
@@ -239,6 +243,22 @@ func (m AllModel) handleKey(msg tea.KeyMsg) (AllModel, tea.Cmd) {
 		return m.handlePaste()
 	}
 
+	// Activation key: plain → show-sessions; shift → show-state.
+	if msg.String() == m.activationKey {
+		if m.commandFile != "" {
+			exe, _ := os.Executable()
+			os.WriteFile(m.commandFile, []byte(exe+" show-sessions\n"), 0644)
+		}
+		return m, tea.Quit
+	}
+	if msg.String() == m.shiftActivationKey {
+		if m.commandFile != "" {
+			exe, _ := os.Executable()
+			os.WriteFile(m.commandFile, []byte(exe+" show-state\n"), 0644)
+		}
+		return m, tea.Quit
+	}
+
 	// alt+hjkl/; — jump to that window column.
 	if laneIdx, ok := altLaneKeyLane[msg.String()]; ok {
 		m.curCol = laneIdx + 1
@@ -327,7 +347,7 @@ func (m AllModel) handleAddSession(name string) (AllModel, tea.Cmd) {
 				"tmux set-option -t \"$NEWSESS\" @hometown_slot %s\n",
 			"NEWWIN=$(tmux display-message -t \"$NEWSESS\" -p '#{window_id}')\n"+
 				"%s record-window-visit \"$NEWWIN\"\n"+
-				"%s show-all\n",
+				"%s show-grid\n",
 			shellSingleQuote(name), key, exe, exe)
 		os.WriteFile(m.commandFile, []byte(content), 0644)
 		return m, tea.Quit
@@ -377,7 +397,7 @@ func (m AllModel) handleAddWindow(name string) (AllModel, tea.Cmd) {
 			"NEWWIN=$(tmux new-window -%s -t '%s' -n %s -c '#{pane_current_path}' -P -F '#{window_id}')\n"+
 				"tmux set-window-option -t \"$NEWWIN\" @hometown_lane '%s'\n"+
 				"%s record-window-visit \"$NEWWIN\"\n"+
-				"%s show-all\n",
+				"%s show-grid\n",
 			position, targetID, shellSingleQuote(name), laneKey, exe, exe)
 		os.WriteFile(m.commandFile, []byte(content), 0644)
 		return m, tea.Quit
@@ -761,8 +781,8 @@ func (m AllModel) renderBar() string {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-func runAllBody(args []string) {
-	fs := flag.NewFlagSet("show-all-body", flag.ExitOnError)
+func runGridBody(args []string) {
+	fs := flag.NewFlagSet("show-grid-body", flag.ExitOnError)
 	commandFile := fs.String("command-file", "", "write deferred commands here")
 	fs.Parse(args)
 
@@ -772,7 +792,12 @@ func runAllBody(args []string) {
 		os.Exit(1)
 	}
 
-	m := newAllModel(sessID, winID, *commandFile)
+	activationKey := tmuxGetGlobalOption("@hometown_activation_key")
+	if activationKey == "" {
+		activationKey = "u"
+	}
+
+	m := newAllModel(sessID, winID, *commandFile, activationKey, shiftOf(activationKey))
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "hometown: %v\n", err)
