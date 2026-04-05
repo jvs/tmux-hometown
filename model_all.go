@@ -100,14 +100,14 @@ func loadAllRows() []allRow {
 
 func newAllModel(initialSessID, initialWinID, commandFile, activationKey, shiftActivationKey string) AllModel {
 	m := AllModel{
-		rows:          loadAllRows(),
+		rows:               loadAllRows(),
 		commandFile:        commandFile,
 		activationKey:      activationKey,
 		shiftActivationKey: shiftActivationKey,
-		initialSessID: initialSessID,
-		initialWinID:  initialWinID,
-		width:         90,
-		height:        18,
+		initialSessID:      initialSessID,
+		initialWinID:       initialWinID,
+		width:              90,
+		height:             18,
 	}
 	for i, row := range m.rows {
 		if row.sess != nil && row.sess.ID == initialSessID {

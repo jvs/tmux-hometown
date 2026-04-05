@@ -55,17 +55,17 @@ func newSlotsModel(initialSessID, commandFile, returnView, switchView, activatio
 	sess, _ := loadSession(initialSessID)
 
 	m := SlotsModel{
-		slots:           groupBySlot(),
-		promptMode:      promptMode,
+		slots:              groupBySlot(),
+		promptMode:         promptMode,
 		commandFile:        commandFile,
 		returnView:         returnView,
 		switchView:         switchView,
 		activationKey:      activationKey,
 		shiftActivationKey: shiftActivationKey,
-		initialSessID:   initialSessID,
-		initialSessName: sess.Name,
-		width:           80,
-		height:          24,
+		initialSessID:      initialSessID,
+		initialSessName:    sess.Name,
+		width:              80,
+		height:             24,
 	}
 	m.positionOnSession(initialSessID)
 	return m, nil

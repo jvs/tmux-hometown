@@ -82,10 +82,10 @@ type Model struct {
 	promptMode bool
 
 	// Command file for deferred add-window (when running as a popup)
-	commandFile       string
-	returnView        string // view name to reopen after add-window (e.g. "windows")
-	switchView        string // view name to switch to via alt+o (e.g. "sessions")
-	activationKey     string // key that switches between popups
+	commandFile        string
+	returnView         string // view name to reopen after add-window (e.g. "windows")
+	switchView         string // view name to switch to via alt+o (e.g. "sessions")
+	activationKey      string // key that switches between popups
 	shiftActivationKey string
 
 	// Window to restore on cancel
@@ -113,18 +113,18 @@ func newModel(initialSessID, initialWinID, commandFile, returnView, switchView, 
 		tmuxGetCurrentWindowOption("@hometown_lane_never") != "1"
 
 	m := Model{
-		session:      sess,
-		windows:      windows,
-		lanes:        groupByLane(windows),
-		promptMode:   promptMode,
+		session:            sess,
+		windows:            windows,
+		lanes:              groupByLane(windows),
+		promptMode:         promptMode,
 		commandFile:        commandFile,
 		returnView:         returnView,
 		switchView:         switchView,
 		activationKey:      activationKey,
 		shiftActivationKey: shiftActivationKey,
-		initialWinID: initialWinID,
-		width:        80,
-		height:       24,
+		initialWinID:       initialWinID,
+		width:              80,
+		height:             24,
 	}
 	m.positionOnWindow(initialWinID)
 	return m, nil
