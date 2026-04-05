@@ -333,7 +333,7 @@ func writePopupScript(path, view, exe string) error {
 			exe, popupCmdFile)
 	case "sessions":
 		body = fmt.Sprintf(
-			"#!/bin/sh\nexec %s show-sessions-body --command-file %s --return-view sessions\n",
+			"#!/bin/sh\nexec %s show-sessions-body --command-file %s --return-view sessions --switch-view windows\n",
 			exe, popupCmdFile)
 	case "grid":
 		body = fmt.Sprintf(
@@ -481,6 +481,9 @@ func cmdSwitchLane(key int) error {
 			return tmuxRun("display-message", "[ Window "+indexDisplay(key)+" ]")
 		}
 		idx := indexByID(laneWins, curWinID)
+		if idx < 0 {
+			idx = 0
+		}
 		nextIdx := (idx + 1) % len(laneWins)
 		nextWin := laneWins[nextIdx]
 		if err := tmuxRun("select-window", "-t", nextWin.ID); err != nil {

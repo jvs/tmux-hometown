@@ -257,14 +257,14 @@ func filterByLane(windows []Window, lane int) []Window {
 	return result
 }
 
-// indexByID returns the index of the window with the given ID, or 0.
+// indexByID returns the index of the window with the given ID, or -1 if not found.
 func indexByID(windows []Window, id string) int {
 	for i, w := range windows {
 		if w.ID == id {
 			return i
 		}
 	}
-	return 0
+	return -1
 }
 
 // shellSingleQuote wraps s in single quotes, escaping any single quotes within

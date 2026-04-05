@@ -216,9 +216,9 @@ func (m Model) handlePromptKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	if key == "alt+o" || key == "alt+"+m.shiftActivationKey {
-		if m.commandFile != "" {
+		if m.switchView != "" && m.commandFile != "" {
 			exe, _ := os.Executable()
-			os.WriteFile(m.commandFile, []byte(exe+" show-sessions\n"), 0644)
+			os.WriteFile(m.commandFile, []byte(exe+" show-"+m.switchView+"\n"), 0644)
 		}
 		return m, tea.Quit
 	}
@@ -354,9 +354,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	if key == "alt+o" || key == "alt+"+m.shiftActivationKey {
-		if m.commandFile != "" {
+		if m.switchView != "" && m.commandFile != "" {
 			exe, _ := os.Executable()
-			os.WriteFile(m.commandFile, []byte(exe+" show-sessions\n"), 0644)
+			os.WriteFile(m.commandFile, []byte(exe+" show-"+m.switchView+"\n"), 0644)
 		}
 		return m, tea.Quit
 	}
