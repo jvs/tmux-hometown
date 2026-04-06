@@ -30,9 +30,9 @@ func main() {
 	switch cmd {
 	case "switch-window":
 		if len(args) < 1 {
-			die("switch-window requires a key (%s)", strings.Join(slotKeys, ", "))
+			die("switch-window requires a key (%s)", strings.Join(laneOrder, ", "))
 		}
-		key, err := parseSlotKey(args[0])
+		key, err := parseLaneKey(args[0])
 		if err != nil {
 			die("%v", err)
 		}
@@ -411,7 +411,10 @@ func calcSlotsHeight() int {
 	if h < 8 {
 		h = 8
 	}
-	if keysError != "" {
+	if laneKeysError != "" {
+		h++
+	}
+	if slotKeysError != "" {
 		h++
 	}
 	return h
@@ -441,7 +444,10 @@ func calcLanesHeight(sessID string) int {
 	if h < 8 {
 		h = 8
 	}
-	if keysError != "" {
+	if laneKeysError != "" {
+		h++
+	}
+	if slotKeysError != "" {
 		h++
 	}
 	return h
@@ -664,7 +670,7 @@ func cmdSwitchSlot(key int) error {
 
 	if len(sessions) == 1 {
 		if sessions[0].ID == currentSessID {
-			tmuxRun("display-message", "[ Session "+indexDisplay(key)+" ]")
+			tmuxRun("display-message", "[ Session "+slotIndexDisplay(key)+" ]")
 			return nil
 		}
 		if err := tmuxRun("switch-client", "-t", sessions[0].ID); err != nil {

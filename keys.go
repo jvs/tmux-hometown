@@ -9,7 +9,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-const defaultKeysStr = "hjkl;"
+const defaultLaneKeysStr = "hjkl;"
+const defaultSlotKeysStr = "hjkl;"
 
 // ── Control key resolution ────────────────────────────────────────────────────
 
@@ -54,31 +55,49 @@ var resolvedCtrlFor map[string]CtrlKey
 // "[a] add · [r] rename · [x] cut · [p] paste · [i] hide · [q] kill"
 var resolvedHintBar string
 
-// keysError is non-empty when @hometown_keys contains an invalid value.
-// It is set by initKeys and read by popup views to show an error banner.
-var keysError string
+// laneKeysError and slotKeysError are non-empty when the respective tmux
+// options contain invalid values. Set by initKeys, read by popup views.
+var laneKeysError string
+var slotKeysError string
 
 var keysErrorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
 
-// initKeys reads @hometown_keys, validates it, and rebuilds all key-derived
-// globals. On any error it falls back to defaultKeysStr.
+// initKeys reads @hometown_lane_keys and @hometown_slot_keys, validates each,
+// and rebuilds all key-derived globals. Falls back to defaults on any error.
 func initKeys() {
-	raw := tmuxGetGlobalOption("@hometown_keys")
-	var runes []rune
-	if raw == "" {
-		runes = []rune(defaultKeysStr)
-		keysError = ""
+	rawLane := tmuxGetGlobalOption("@hometown_lane_keys")
+	var laneRunes []rune
+	if rawLane == "" {
+		laneRunes = []rune(defaultLaneKeysStr)
+		laneKeysError = ""
 	} else {
 		var err error
-		runes, err = validateKeys(raw)
+		laneRunes, err = validateKeys(rawLane)
 		if err != nil {
-			keysError = fmt.Sprintf("@hometown_keys %q: %v — using default %q", raw, err, defaultKeysStr)
-			runes = []rune(defaultKeysStr)
+			laneKeysError = fmt.Sprintf("@hometown_lane_keys %q: %v — using default %q", rawLane, err, defaultLaneKeysStr)
+			laneRunes = []rune(defaultLaneKeysStr)
 		} else {
-			keysError = ""
+			laneKeysError = ""
 		}
 	}
-	buildKeyState(runes)
+
+	rawSlot := tmuxGetGlobalOption("@hometown_slot_keys")
+	var slotRunes []rune
+	if rawSlot == "" {
+		slotRunes = []rune(defaultSlotKeysStr)
+		slotKeysError = ""
+	} else {
+		var err error
+		slotRunes, err = validateKeys(rawSlot)
+		if err != nil {
+			slotKeysError = fmt.Sprintf("@hometown_slot_keys %q: %v — using default %q", rawSlot, err, defaultSlotKeysStr)
+			slotRunes = []rune(defaultSlotKeysStr)
+		} else {
+			slotKeysError = ""
+		}
+	}
+
+	buildKeyState(laneRunes, slotRunes)
 }
 
 // validateKeys ensures s contains exactly 5 unique printable non-space ASCII
@@ -105,49 +124,52 @@ func validateKeys(s string) ([]rune, error) {
 	return runes, nil
 }
 
-// buildKeyState initialises laneOrder, slotKeys, and the four popup key-maps
-// from a validated rune slice.
-func buildKeyState(keys []rune) {
-	n := len(keys)
-	laneOrder = make([]string, n)
-	slotKeys = make([]string, n)
-	for i, r := range keys {
+// buildKeyState initialises laneOrder, slotKeys, altLaneKey, and altSlotKey
+// from validated rune slices, then resolves control keys.
+func buildKeyState(laneK, slotK []rune) {
+	laneOrder = make([]string, len(laneK))
+	for i, r := range laneK {
 		laneOrder[i] = string(r)
+	}
+
+	slotKeys = make([]string, len(slotK))
+	for i, r := range slotK {
 		slotKeys[i] = string(r)
 	}
 
-	laneKeyLane = make(map[string]int, n*4)
-	laneKeyShift = make(map[string]bool, n*2)
-	altLaneKeyLane = make(map[string]int, n)
-	altShiftLaneKeyLane = make(map[string]int, n)
-
-	for i, r := range keys {
+	// Each alt map holds both "alt+<key>" and "alt+<shift-variant>" entries
+	// so that either form jumps to the same column.
+	altLaneKey = make(map[string]int, len(laneK)*2)
+	for i, r := range laneK {
 		s := string(r)
-		sv := keyShiftVariant(r)
-
-		laneKeyLane[s] = i
-		laneKeyShift[s] = false
-		altLaneKeyLane["alt+"+s] = i
-
-		if sv != s {
-			laneKeyLane[sv] = i
-			laneKeyShift[sv] = true
-			altShiftLaneKeyLane["alt+"+sv] = i
-		} else {
-			// No distinct shift variant; alt+key doubles as the alt-shift entry.
-			altShiftLaneKeyLane["alt+"+s] = i
+		altLaneKey["alt+"+s] = i
+		if sv := keyShiftVariant(r); sv != s {
+			altLaneKey["alt+"+sv] = i
 		}
 	}
-	buildCtrlState(keys)
+
+	altSlotKey = make(map[string]int, len(slotK)*2)
+	for i, r := range slotK {
+		s := string(r)
+		altSlotKey["alt+"+s] = i
+		if sv := keyShiftVariant(r); sv != s {
+			altSlotKey["alt+"+sv] = i
+		}
+	}
+
+	buildCtrlState(laneK, slotK)
 }
 
-// buildCtrlState resolves which keyboard key is assigned to each control action,
-// given the current hometown keys. Resolution goes left-to-right through ctrlDefs;
-// each control claims the first preference not already taken by a hometown key or
-// a previously resolved control.
-func buildCtrlState(keys []rune) {
-	taken := make(map[string]bool, len(keys)+len(ctrlDefs))
-	for _, r := range keys {
+// buildCtrlState resolves which keyboard key is assigned to each control
+// action. Resolution goes left-to-right through ctrlDefs; each control claims
+// the first preference not already taken by a lane key, slot key, or a
+// previously resolved control.
+func buildCtrlState(laneK, slotK []rune) {
+	taken := make(map[string]bool, len(laneK)+len(slotK)+len(ctrlDefs))
+	for _, r := range laneK {
+		taken[string(r)] = true
+	}
+	for _, r := range slotK {
 		taken[string(r)] = true
 	}
 
@@ -189,13 +211,13 @@ func keyShiftVariant(r rune) string {
 // ── Display helpers ───────────────────────────────────────────────────────────
 
 // storeIndex returns the string to write into a tmux option for a lane/slot
-// index.  Using a plain digit avoids tmux treating ";" and other punctuation
+// index. Using a plain digit avoids tmux treating ";" and other punctuation
 // as command separators when the value is passed on the command line.
 func storeIndex(i int) string { return strconv.Itoa(i) }
 
 // parseIndex converts a stored index string back to an int.
-// Returns -1 for any value that is not a valid index into laneOrder
-// (including the empty string and old-format values like "h" or "semi").
+// Returns -1 for any value that is not a valid index (including the empty
+// string and old-format values like "h" or "semi").
 func parseIndex(s string) int {
 	if s == "" {
 		return -1
@@ -207,22 +229,27 @@ func parseIndex(s string) int {
 	return i
 }
 
-// indexDisplay returns the UI label for the lane/slot at position i.
-func indexDisplay(i int) string {
-	if i < 0 || i >= len(laneOrder) {
+// keyAtIndex returns keys[i], or "?" if i is out of range.
+func keyAtIndex(keys []string, i int) string {
+	if i < 0 || i >= len(keys) {
 		return "?"
 	}
-	return keyDisplay(laneOrder[i])
+	return keys[i]
 }
 
-// indexName returns a tmux-safe name fragment for the lane/slot at position i.
-func indexName(i int) string {
-	if i < 0 || i >= len(laneOrder) {
-		return "?"
-	}
-	return keyName(laneOrder[i])
-}
+// indexDisplay returns the UI label for lane position i.
+func indexDisplay(i int) string { return keyDisplay(keyAtIndex(laneOrder, i)) }
 
+// slotIndexDisplay returns the UI label for slot position i.
+func slotIndexDisplay(i int) string { return keyDisplay(keyAtIndex(slotKeys, i)) }
+
+// indexName returns a tmux-safe name fragment for lane position i.
+func indexName(i int) string { return keyName(keyAtIndex(laneOrder, i)) }
+
+// slotIndexName returns a tmux-safe name fragment for slot position i.
+func slotIndexName(i int) string { return keyName(keyAtIndex(slotKeys, i)) }
+
+// keyDisplay formats a key for display:
 // - letters → uppercased  ("h" → "H")
 // - digits  → as-is       ("1" → "1")
 // - symbols → quoted      (";" → `";"`)
@@ -251,9 +278,9 @@ func keyName(key string) string {
 	return key
 }
 
-// promptKeyList builds the key portion of a lane/slot assignment prompt,
+// lanePromptKeyList builds the key portion of a lane assignment prompt,
 // e.g. `[H]  [J]  [K]  [L]  [";"]`.
-func promptKeyList() string {
+func lanePromptKeyList() string {
 	parts := make([]string, len(laneOrder))
 	for i := range laneOrder {
 		parts[i] = "[" + indexDisplay(i) + "]"
@@ -261,13 +288,41 @@ func promptKeyList() string {
 	return strings.Join(parts, "  ")
 }
 
-// keysErrorLine returns a full-width styled error banner for popup views,
-// or "" when @hometown_keys is valid.
-func keysErrorLine(width int) string {
-	if keysError == "" {
-		return ""
+// slotPromptKeyList builds the key portion of a slot assignment prompt.
+func slotPromptKeyList() string {
+	parts := make([]string, len(slotKeys))
+	for i := range slotKeys {
+		parts[i] = "[" + slotIndexDisplay(i) + "]"
 	}
-	return keysErrorStyle.Width(width).Render("  ⚠  " + keysError)
+	return strings.Join(parts, "  ")
+}
+
+// parseLaneKey validates that s is one of the currently configured lane key
+// characters and returns its index.
+func parseLaneKey(s string) (int, error) {
+	for i, key := range laneOrder {
+		if s == key {
+			return i, nil
+		}
+	}
+	displays := make([]string, len(laneOrder))
+	for i, k := range laneOrder {
+		displays[i] = keyDisplay(k)
+	}
+	return -1, fmt.Errorf("invalid key %q: must be one of %s", s, strings.Join(displays, ", "))
+}
+
+// keysErrorLine returns styled error banner line(s) for popup views,
+// or "" when both key configs are valid.
+func keysErrorLine(width int) string {
+	var lines []string
+	if laneKeysError != "" {
+		lines = append(lines, keysErrorStyle.Width(width).Render("  ⚠  "+laneKeysError))
+	}
+	if slotKeysError != "" {
+		lines = append(lines, keysErrorStyle.Width(width).Render("  ⚠  "+slotKeysError))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // firstRune returns the first rune of s, or 0 if s is empty.

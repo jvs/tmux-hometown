@@ -198,17 +198,29 @@ func buildStateLines() []string {
 			stateKeyStyle.Render(fmt.Sprintf("%-22s", "cycle_pattern")),
 			cyclePatternDisplay))
 
-	rawKeys := tmuxGetGlobalOption("@hometown_keys")
-	keysDisplay := rawKeys
-	if rawKeys == "" {
-		keysDisplay = defaultKeysStr + "  " + dimStyle.Render("(default)")
-	} else if keysError != "" {
-		keysDisplay = rawKeys + "  " + keysErrorStyle.Render("invalid — "+keysError)
+	rawLaneKeys := tmuxGetGlobalOption("@hometown_lane_keys")
+	laneKeysDisplay := rawLaneKeys
+	if rawLaneKeys == "" {
+		laneKeysDisplay = defaultLaneKeysStr + "  " + dimStyle.Render("(default)")
+	} else if laneKeysError != "" {
+		laneKeysDisplay = rawLaneKeys + "  " + keysErrorStyle.Render("invalid — "+laneKeysError)
 	}
 	lines = append(lines,
 		fmt.Sprintf("   %s  %s",
-			stateKeyStyle.Render(fmt.Sprintf("%-22s", "keys")),
-			keysDisplay))
+			stateKeyStyle.Render(fmt.Sprintf("%-22s", "lane_keys")),
+			laneKeysDisplay))
+
+	rawSlotKeys := tmuxGetGlobalOption("@hometown_slot_keys")
+	slotKeysDisplay := rawSlotKeys
+	if rawSlotKeys == "" {
+		slotKeysDisplay = defaultSlotKeysStr + "  " + dimStyle.Render("(default)")
+	} else if slotKeysError != "" {
+		slotKeysDisplay = rawSlotKeys + "  " + keysErrorStyle.Render("invalid — "+slotKeysError)
+	}
+	lines = append(lines,
+		fmt.Sprintf("   %s  %s",
+			stateKeyStyle.Render(fmt.Sprintf("%-22s", "slot_keys")),
+			slotKeysDisplay))
 	lines = append(lines, "")
 
 	// ── Sessions ──────────────────────────────────────────────────────────────
@@ -224,8 +236,10 @@ func buildStateLines() []string {
 			var sb strings.Builder
 			sb.WriteString(fmt.Sprintf("   %-6s  %-22s", sessID, truncate(name, 22)))
 			if slotKey != "" {
-				display := slotKey
-				if parseIndex(slotKey) < 0 {
+				var display string
+				if i := parseIndex(slotKey); i >= 0 {
+					display = slotIndexDisplay(i)
+				} else {
 					display = stateBadValStyle.Render(slotKey)
 				}
 				appendStateOptVal(&sb, "@hometown_slot", display)
@@ -271,7 +285,7 @@ func buildStateLines() []string {
 				if slot := sessSlots[sessID]; slot != "" {
 					slotStr := "  Slot " + func() string {
 						if i := parseIndex(slot); i >= 0 {
-							return indexDisplay(i)
+							return slotIndexDisplay(i)
 						}
 						return stateBadValStyle.Render(slot)
 					}()

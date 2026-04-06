@@ -43,6 +43,17 @@ bind U run 'hometown show-sessions'
 
 That's enough to get started. The other popups (`show-grid`, `show-state`) are reachable from within the popup UI.
 
+### Lane and slot keys
+
+The keys used for lanes and slots can be configured independently. Both default to `hjkl;`:
+
+```tmux
+set -g @hometown_lane_keys hjkl;
+set -g @hometown_slot_keys hjkl;
+```
+
+Both lists must contain exactly five keys. No list may contain duplicate keys within itself, but the two lists may share keys with each other.
+
 ### Activation key
 
 While any popup is open, the **activation key** (default: `u`) and **Tab** cycle forward through the popups. **Shift + activation key** and **Shift+Tab** cycle backward.
@@ -103,7 +114,7 @@ Moving the cursor live-switches the active window so you can preview as you navi
 | `j` | Move down; wraps to the top of the next lane at the bottom |
 | `k` | Move up; wraps to the bottom of the previous lane at the top |
 | `↓` / `↑` | Move down / up within the lane (no wrap) |
-| `alt`+lane key, or `shift`+lane key | Jump directly to that lane |
+| `alt`+lane key | Jump directly to that lane |
 
 Lane keys are `h j k l ;` (plain or with alt/shift).
 
@@ -161,7 +172,7 @@ Moving the cursor live-switches the active session.
 | `j` | Move down; wraps to the top of the next slot at the bottom |
 | `k` | Move up; wraps to the bottom of the previous slot at the top |
 | `↓` / `↑` | Move down / up within the slot (no wrap) |
-| `alt`+lane key, or `shift`+lane key | Jump directly to that slot |
+| `alt`+slot key | Jump directly to that slot |
 
 #### Actions
 
@@ -224,8 +235,6 @@ A `-` marks an empty cell. Pressing `Enter` on a `-` in the window columns creat
 | `l` / `→` | Move right one column |
 | `j` / `↓` | Move down one row |
 | `k` / `↑` | Move up one row |
-| `alt`+lane key | Jump to that window column |
-| `alt+shift`+lane key | Jump to that session row |
 
 #### Actions
 

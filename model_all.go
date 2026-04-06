@@ -242,18 +242,6 @@ func (m AllModel) handleKey(msg tea.KeyMsg) (AllModel, tea.Cmd) {
 		return m, cyclePopup("grid", m.cyclePattern, m.commandFile, false)
 	}
 
-	// alt+hjkl/; — jump to that window column.
-	if laneIdx, ok := altLaneKeyLane[msg.String()]; ok {
-		m.curCol = laneIdx + 1
-		return m, m.switchToCurrentCmd()
-	}
-
-	// alt+shift+hjkl/: — jump to that slot row.
-	if laneIdx, ok := altShiftLaneKeyLane[msg.String()]; ok {
-		m.curRow = laneIdx
-		return m, m.switchToCurrentCmd()
-	}
-
 	return m, nil
 }
 
@@ -402,7 +390,7 @@ func (m AllModel) handleAddWindow(name string) (AllModel, tea.Cmd) {
 func (m AllModel) handleEnterEmptySessionWindow() (AllModel, tea.Cmd) {
 	slotKey := m.rows[m.curRow].slotKey
 	laneKey := m.curCol - 1
-	sessName := "Session " + indexName(slotKey)
+	sessName := "Session " + slotIndexName(slotKey)
 	winName := "Window " + indexName(laneKey)
 
 	if m.commandFile != "" {
@@ -677,7 +665,7 @@ func (m AllModel) renderRow(rowIdx int, row allRow) string {
 	// Key cell.
 	keyCell := lipgloss.NewStyle().Width(allKeyColW).
 		Foreground(fg).
-		Render(indexDisplay(row.slotKey))
+		Render(slotIndexDisplay(row.slotKey))
 
 	// Session cell.
 	inSessCur := isCurRow && m.curCol == allColSession

@@ -27,12 +27,10 @@ var (
 	cursorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
 )
 
-// laneKeyLane, laneKeyShift, altLaneKeyLane, and altShiftLaneKeyLane are
-// rebuilt by initKeys() via buildKeyState whenever the configured keys change.
-var laneKeyLane map[string]int
-var laneKeyShift map[string]bool
-var altLaneKeyLane map[string]int
-var altShiftLaneKeyLane map[string]int
+// altLaneKey and altSlotKey map "alt+<key>" (and "alt+<shift-variant>") to
+// lane/slot indices. Rebuilt by initKeys() via buildKeyState.
+var altLaneKey map[string]int
+var altSlotKey map[string]int
 
 // shiftOf returns the shift variant of a single-character activation key.
 // Letter keys return their uppercase form; ";" returns ":".
@@ -220,12 +218,14 @@ func (m Model) handlePromptKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	if key == m.shiftActivationKey || key == "shift+tab" {
 		return m, cyclePopup("windows", m.cyclePattern, m.commandFile, false)
 	}
-	if laneIdx, ok := laneKeyLane[key]; ok && !laneKeyShift[key] {
-		tmuxRun("set-window-option", "-t", m.initialWinID, "@hometown_lane", storeIndex(laneIdx))
-		m.refresh()
-		m.positionOnWindow(m.initialWinID)
-		m.promptMode = false
-		return m, nil
+	for laneIdx, lk := range laneOrder {
+		if key == lk {
+			tmuxRun("set-window-option", "-t", m.initialWinID, "@hometown_lane", storeIndex(laneIdx))
+			m.refresh()
+			m.positionOnWindow(m.initialWinID)
+			m.promptMode = false
+			return m, nil
+		}
 	}
 	return m, nil
 }
@@ -347,16 +347,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	if key == m.shiftActivationKey || key == "shift+tab" {
 		return m, cyclePopup("windows", m.cyclePattern, m.commandFile, false)
 	}
-	laneIdx, ok := altLaneKeyLane[key]
-	if !ok {
-		laneIdx, ok = altShiftLaneKeyLane[key]
-	}
-	if !ok {
-		if idx, found := laneKeyLane[key]; found && laneKeyShift[key] {
-			laneIdx, ok = idx, true
-		}
-	}
-	if ok {
+	if laneIdx, ok := altLaneKey[key]; ok {
 		if m.colLane == laneIdx {
 			windows := m.lanes[laneIdx]
 			if n := len(windows); n > 0 {
@@ -714,7 +705,7 @@ func (m Model) viewPrompt() string {
 		}
 	}
 	question := lipgloss.NewStyle().Render(fmt.Sprintf("Assign a lane to window %q?", name))
-	options := hintStyle.Render(promptKeyList() + "  [s]kip  [n]ever")
+	options := hintStyle.Render(lanePromptKeyList() + "  [s]kip  [n]ever")
 	centered := lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(question + "  " + options)
 	return strings.Repeat("\n", m.height/2-1) + centered
 }

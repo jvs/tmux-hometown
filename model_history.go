@@ -157,7 +157,10 @@ func calcHistoryHeight() int {
 	if h < 8 {
 		h = 8
 	}
-	if keysError != "" {
+	if laneKeysError != "" {
+		h++
+	}
+	if slotKeysError != "" {
 		h++
 	}
 	return h

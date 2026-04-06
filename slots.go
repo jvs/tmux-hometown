@@ -74,7 +74,7 @@ func setSlot(i int, sessID string) error {
 // "Session <X>" if that name is not already taken.  The session's initial
 // window is tagged with lane index 1 (the default lane).
 func newSlotSession(i int) (string, error) {
-	name := "Session " + indexName(i)
+	name := "Session " + slotIndexName(i)
 	out, err := exec.Command("tmux", "new-session", "-d", "-s", name, "-P", "-F", "#{session_id}").Output()
 	if err != nil {
 		// Name already taken — create without a specific name.

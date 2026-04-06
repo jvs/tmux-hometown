@@ -329,26 +329,16 @@ func (m SlotsModel) handleKey(msg tea.KeyMsg) (SlotsModel, tea.Cmd) {
 		return m, cyclePopup("sessions", m.cyclePattern, m.commandFile, false)
 	}
 
-	// alt+hjkl/;, alt+shift+hjkl/:, or shift+hjkl/: — jump to that slot column (or cycle within if already there).
-	slotLaneIdx, ok := altLaneKeyLane[key]
-	if !ok {
-		slotLaneIdx, ok = altShiftLaneKeyLane[key]
-	}
-	if !ok {
-		if idx, found := laneKeyLane[key]; found && laneKeyShift[key] {
-			slotLaneIdx, ok = idx, true
-		}
-	}
-	if ok {
-		laneIdx := slotLaneIdx
-		if m.colSlot == laneIdx {
-			sessions := m.slots[laneIdx]
+	// alt+slot-key — jump to that slot column (or cycle within if already there).
+	if slotIdx, ok := altSlotKey[key]; ok {
+		if m.colSlot == slotIdx {
+			sessions := m.slots[slotIdx]
 			if n := len(sessions); n > 0 {
 				m.colRow = (m.colRow + 1) % n
 			}
 		} else {
-			m.colSlot = laneIdx
-			sessions := m.slots[laneIdx]
+			m.colSlot = slotIdx
+			sessions := m.slots[slotIdx]
 			if len(sessions) > 0 && m.colRow >= len(sessions) {
 				m.colRow = len(sessions) - 1
 			}
@@ -432,7 +422,7 @@ func (m SlotsModel) handleEnterEmpty() (SlotsModel, tea.Cmd) {
 
 	if m.commandFile != "" {
 		exe, _ := os.Executable()
-		name := "Session " + indexName(key)
+		name := "Session " + slotIndexName(key)
 		content := fmt.Sprintf(
 			"NEWSESS=$(tmux new-session -d -s %s -P -F '#{session_id}' 2>/dev/null || tmux new-session -d -P -F '#{session_id}')\n"+
 				"tmux set-option -t \"$NEWSESS\" @hometown_slot %s\n"+
@@ -625,7 +615,7 @@ func (m SlotsModel) View() string {
 func (m SlotsModel) viewPrompt() string {
 	question := lipgloss.NewStyle().Render(
 		fmt.Sprintf("Assign a slot to session %q?", m.initialSessName))
-	options := hintStyle.Render(promptKeyList() + "  [s]kip  [n]ever")
+	options := hintStyle.Render(slotPromptKeyList() + "  [s]kip  [n]ever")
 	line := question + "  " + options
 	centered := lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(line)
 	top := strings.Repeat("\n", m.height/2-1)
@@ -647,7 +637,7 @@ func (m SlotsModel) viewGrid() string {
 		} else {
 			s = lipgloss.NewStyle().Width(colWidth).Foreground(lipgloss.Color("246"))
 		}
-		headerSB.WriteString(s.Render(indexDisplay(li)))
+		headerSB.WriteString(s.Render(slotIndexDisplay(li)))
 		if li < len(slotKeys)-1 {
 			headerSB.WriteString("  ")
 		}
