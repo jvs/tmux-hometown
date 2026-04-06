@@ -245,14 +245,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		tmuxRun("switch-client", "-t", m.session.ID+":"+m.initialWinID)
 		return m, tea.Quit
 
-	case "down":
-		windows := m.lanes[m.colLane]
-		if m.colWindow < len(windows)-1 {
-			m.colWindow++
-		}
-		return m, m.switchToCurrentCmd()
-
-	case "j":
+	case "down", "j":
 		windows := m.lanes[m.colLane]
 		if m.colWindow < len(windows)-1 {
 			m.colWindow++
@@ -262,13 +255,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, m.switchToCurrentCmd()
 
-	case "up":
-		if m.colWindow > 0 {
-			m.colWindow--
-		}
-		return m, m.switchToCurrentCmd()
-
-	case "k":
+	case "up", "k":
 		if m.colWindow > 0 {
 			m.colWindow--
 		} else if m.colLane > 0 {

@@ -217,14 +217,7 @@ func (m SlotsModel) handleKey(msg tea.KeyMsg) (SlotsModel, tea.Cmd) {
 		}
 		return m, tea.Quit
 
-	case "down":
-		sessions := m.slots[m.colSlot]
-		if m.colRow < len(sessions)-1 {
-			m.colRow++
-		}
-		return m, m.switchToCurrentCmd()
-
-	case "j":
+	case "down", "j":
 		sessions := m.slots[m.colSlot]
 		if m.colRow < len(sessions)-1 {
 			m.colRow++
@@ -234,13 +227,7 @@ func (m SlotsModel) handleKey(msg tea.KeyMsg) (SlotsModel, tea.Cmd) {
 		}
 		return m, m.switchToCurrentCmd()
 
-	case "up":
-		if m.colRow > 0 {
-			m.colRow--
-		}
-		return m, m.switchToCurrentCmd()
-
-	case "k":
+	case "up", "k":
 		if m.colRow > 0 {
 			m.colRow--
 		} else if m.colSlot > 0 {
