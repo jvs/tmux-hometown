@@ -261,7 +261,7 @@ func keyDisplay(key string) string {
 	if unicode.IsDigit(r) {
 		return key
 	}
-	return `"` + key + `"`
+	return "'" + key + "'"
 }
 
 // keyName returns a label for session/window names: letters are uppercased,
