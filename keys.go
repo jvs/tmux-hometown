@@ -11,6 +11,49 @@ import (
 
 const defaultKeysStr = "hjkl;"
 
+// ── Control key resolution ────────────────────────────────────────────────────
+
+// CtrlKey identifies one of the six popup control actions.
+type CtrlKey int
+
+const (
+	CtrlAdd    CtrlKey = iota // add
+	CtrlRename                // rename
+	CtrlCut                   // cut
+	CtrlPaste                 // paste
+	CtrlHide                  // hide (remove from slot/lane without killing)
+	CtrlKill                  // kill (delete)
+)
+
+// ctrlDef pairs a CtrlKey with its display label and ordered preference list.
+type ctrlDef struct {
+	key   CtrlKey
+	label string
+	prefs []string
+}
+
+// ctrlDefs lists the six controls in left-to-right resolution order.
+// Edit the prefs slices here to change key preferences.
+var ctrlDefs = []ctrlDef{
+	{CtrlAdd, "add", []string{"a", "d", "w", "+", "1", "2", "3", "4", "5", "6", "7", "8", "9"}},
+	{CtrlRename, "rename", []string{"r", "e", "n", "m", "1", "2", "3", "4", "5", "6", "7", "8", "9"}},
+	{CtrlCut, "cut", []string{"x", "c", "u", "t", "y", "1", "2", "3", "4", "5", "6", "7", "8", "9"}},
+	{CtrlPaste, "paste", []string{"p", "v", "s", "*", "1", "2", "3", "4", "5", "6", "7", "8", "9"}},
+	{CtrlHide, "hide", []string{"i", "z", "g", "-", "1", "2", "3", "4", "5", "6", "7", "8", "9"}},
+	{CtrlKill, "kill", []string{"q", "b", "f", "!", "1", "2", "3", "4", "5", "6", "7", "8", "9"}},
+}
+
+// resolvedCtrlKey maps each CtrlKey to its assigned keyboard key for the
+// current hometown key config. Rebuilt by buildKeyState via buildCtrlState.
+var resolvedCtrlKey map[CtrlKey]string
+
+// resolvedCtrlFor is the reverse of resolvedCtrlKey: keyboard key → CtrlKey.
+var resolvedCtrlFor map[string]CtrlKey
+
+// resolvedHintBar is the pre-built hint string shown in popup control bars, e.g.
+// "[a] add · [r] rename · [x] cut · [p] paste · [i] hide · [q] kill"
+var resolvedHintBar string
+
 // keysError is non-empty when @hometown_keys contains an invalid value.
 // It is set by initKeys and read by popup views to show an error banner.
 var keysError string
@@ -95,6 +138,40 @@ func buildKeyState(keys []rune) {
 			altShiftLaneKeyLane["alt+"+s] = i
 		}
 	}
+	buildCtrlState(keys)
+}
+
+// buildCtrlState resolves which keyboard key is assigned to each control action,
+// given the current hometown keys. Resolution goes left-to-right through ctrlDefs;
+// each control claims the first preference not already taken by a hometown key or
+// a previously resolved control.
+func buildCtrlState(keys []rune) {
+	taken := make(map[string]bool, len(keys)+len(ctrlDefs))
+	for _, r := range keys {
+		taken[string(r)] = true
+	}
+
+	resolvedCtrlKey = make(map[CtrlKey]string, len(ctrlDefs))
+	resolvedCtrlFor = make(map[string]CtrlKey, len(ctrlDefs))
+
+	parts := make([]string, 0, len(ctrlDefs))
+	for _, def := range ctrlDefs {
+		var chosen string
+		for _, pref := range def.prefs {
+			if !taken[pref] {
+				chosen = pref
+				taken[pref] = true
+				break
+			}
+		}
+		if chosen == "" {
+			chosen = "?" // shouldn't happen; digits ensure a fallback always exists
+		}
+		resolvedCtrlKey[def.key] = chosen
+		resolvedCtrlFor[chosen] = def.key
+		parts = append(parts, "["+chosen+"] "+def.label)
+	}
+	resolvedHintBar = strings.Join(parts, " · ")
 }
 
 // keyShiftVariant returns the shifted representation of r:

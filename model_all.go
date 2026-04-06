@@ -203,34 +203,34 @@ func (m AllModel) handleKey(msg tea.KeyMsg) (AllModel, tea.Cmd) {
 		}
 		return m, m.switchToCurrentCmd()
 
-	case "a":
-		return m.startAdd()
+	}
 
-	case "r":
-		return m.startRename()
-
-	case "d":
-		if m.curCol == allColSession {
-			if s := m.currentSess(); s != nil {
-				m.modal = newConfirmModal(fmt.Sprintf("Kill session %q?", s.Name))
-				m.modalAction = ActionDelete
+	if ctrl, ok := resolvedCtrlFor[msg.String()]; ok {
+		switch ctrl {
+		case CtrlAdd:
+			return m.startAdd()
+		case CtrlRename:
+			return m.startRename()
+		case CtrlCut:
+			return m.handleCut()
+		case CtrlPaste:
+			return m.handlePaste()
+		case CtrlHide:
+			return m.handleHide()
+		case CtrlKill:
+			if m.curCol == allColSession {
+				if s := m.currentSess(); s != nil {
+					m.modal = newConfirmModal(fmt.Sprintf("Kill session %q?", s.Name))
+					m.modalAction = ActionDelete
+				}
+			} else {
+				if w := m.currentWin(); w != nil {
+					m.modal = newConfirmModal(fmt.Sprintf("Kill window %q?", w.Name))
+					m.modalAction = ActionDelete
+				}
 			}
-		} else {
-			if w := m.currentWin(); w != nil {
-				m.modal = newConfirmModal(fmt.Sprintf("Kill window %q?", w.Name))
-				m.modalAction = ActionDelete
-			}
+			return m, nil
 		}
-		return m, nil
-
-	case "m":
-		return m.handleRemove()
-
-	case "c", "x":
-		return m.handleCut()
-
-	case "p":
-		return m.handlePaste()
 	}
 
 	// Activation key / tab: cycle through popups.
@@ -506,7 +506,7 @@ func (m AllModel) handleDeleteWindow() (AllModel, tea.Cmd) {
 	return m.handleDeleteSession()
 }
 
-func (m AllModel) handleRemove() (AllModel, tea.Cmd) {
+func (m AllModel) handleHide() (AllModel, tea.Cmd) {
 	if m.curCol == allColSession {
 		if s := m.currentSess(); s != nil {
 			clearSlotForSession(s.ID)
@@ -760,7 +760,7 @@ func (m AllModel) renderBar() string {
 		return pad + dimStyle.Render(m.inputPrompt+": ") + string(m.inputValue) + cursorStyle.Render("█")
 	}
 	return lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(
-		hintStyle.Render("[a]dd   [r]ename   [d]elete   [c]ut   [p]aste   re[m]ove"))
+		hintStyle.Render(resolvedHintBar))
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────

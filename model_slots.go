@@ -217,45 +217,6 @@ func (m SlotsModel) handleKey(msg tea.KeyMsg) (SlotsModel, tea.Cmd) {
 		}
 		return m, tea.Quit
 
-	case "a":
-		m.inputMode = true
-		m.inputPrompt = "Name"
-		m.inputValue = nil
-		m.modalAction = ActionAdd
-		return m, nil
-
-	case "r":
-		if s := m.currentSession(); s != nil {
-			m.inputMode = true
-			m.inputPrompt = "Rename"
-			m.inputValue = []rune(s.Name)
-			m.modalAction = ActionRename
-		}
-		return m, nil
-
-	case "d":
-		if s := m.currentSession(); s != nil {
-			m.modal = newConfirmModal(fmt.Sprintf("Kill session %q?", s.Name))
-			m.modalAction = ActionDelete
-		}
-		return m, nil
-
-	case "m":
-		if s := m.currentSession(); s != nil {
-			clearSlotForSession(s.ID)
-			m.refresh()
-		}
-		return m, nil
-
-	case "c", "x":
-		if s := m.currentSession(); s != nil {
-			m.cutSessID = s.ID
-		}
-		return m, nil
-
-	case "p", "P":
-		return m.handlePaste()
-
 	case "down":
 		sessions := m.slots[m.colSlot]
 		if m.colRow < len(sessions)-1 {
@@ -306,6 +267,44 @@ func (m SlotsModel) handleKey(msg tea.KeyMsg) (SlotsModel, tea.Cmd) {
 			m.clampColRow()
 		}
 		return m, m.switchToCurrentCmd()
+	}
+
+	if ctrl, ok := resolvedCtrlFor[msg.String()]; ok {
+		switch ctrl {
+		case CtrlAdd:
+			m.inputMode = true
+			m.inputPrompt = "Name"
+			m.inputValue = nil
+			m.modalAction = ActionAdd
+			return m, nil
+		case CtrlRename:
+			if s := m.currentSession(); s != nil {
+				m.inputMode = true
+				m.inputPrompt = "Rename"
+				m.inputValue = []rune(s.Name)
+				m.modalAction = ActionRename
+			}
+			return m, nil
+		case CtrlCut:
+			if s := m.currentSession(); s != nil {
+				m.cutSessID = s.ID
+			}
+			return m, nil
+		case CtrlPaste:
+			return m.handlePaste()
+		case CtrlHide:
+			if s := m.currentSession(); s != nil {
+				clearSlotForSession(s.ID)
+				m.refresh()
+			}
+			return m, nil
+		case CtrlKill:
+			if s := m.currentSession(); s != nil {
+				m.modal = newConfirmModal(fmt.Sprintf("Kill session %q?", s.Name))
+				m.modalAction = ActionDelete
+			}
+			return m, nil
+		}
 	}
 
 	key := msg.String()
@@ -612,7 +611,7 @@ func (m SlotsModel) View() string {
 		bar = pad + dimStyle.Render(m.inputPrompt+": ") + string(m.inputValue) + cursorStyle.Render("█")
 	default:
 		bar = lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(
-			hintStyle.Render("[a]dd   [r]ename   [d]elete   [c]ut   [p]aste   re[m]ove"))
+			hintStyle.Render(resolvedHintBar))
 	}
 
 	content := m.viewGrid()

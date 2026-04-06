@@ -245,48 +245,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		tmuxRun("switch-client", "-t", m.session.ID+":"+m.initialWinID)
 		return m, tea.Quit
 
-	case "a":
-		m.inputMode = true
-		m.inputPrompt = "Name"
-		m.inputValue = nil
-		m.modalAction = ActionAdd
-		return m, nil
-
-	case "r":
-		if w := m.currentWindow(); w != nil {
-			m.inputMode = true
-			m.inputPrompt = "Rename"
-			m.inputValue = []rune(w.Name)
-			m.modalAction = ActionRename
-		}
-		return m, nil
-
-	case "d":
-		if w := m.currentWindow(); w != nil {
-			m.modal = newConfirmModal(fmt.Sprintf("Kill window %q?", w.Name))
-			m.modalAction = ActionDelete
-		}
-		return m, nil
-
-	case "m":
-		if w := m.currentWindow(); w != nil {
-			exec.Command("tmux", "set-window-option", "-u", "-t", w.ID, "@hometown_lane").Run()
-			m.refresh()
-		}
-		return m, nil
-
-	case "c", "x":
-		if w := m.currentWindow(); w != nil {
-			m.cutWinID = w.ID
-		}
-		return m, nil
-
-	case "p":
-		return m.handlePaste(false)
-
-	case "P":
-		return m.handlePaste(true)
-
 	case "down":
 		windows := m.lanes[m.colLane]
 		if m.colWindow < len(windows)-1 {
@@ -337,6 +295,44 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			m.clampColWindow()
 		}
 		return m, m.switchToCurrentCmd()
+	}
+
+	if ctrl, ok := resolvedCtrlFor[msg.String()]; ok {
+		switch ctrl {
+		case CtrlAdd:
+			m.inputMode = true
+			m.inputPrompt = "Name"
+			m.inputValue = nil
+			m.modalAction = ActionAdd
+			return m, nil
+		case CtrlRename:
+			if w := m.currentWindow(); w != nil {
+				m.inputMode = true
+				m.inputPrompt = "Rename"
+				m.inputValue = []rune(w.Name)
+				m.modalAction = ActionRename
+			}
+			return m, nil
+		case CtrlCut:
+			if w := m.currentWindow(); w != nil {
+				m.cutWinID = w.ID
+			}
+			return m, nil
+		case CtrlPaste:
+			return m.handlePaste()
+		case CtrlHide:
+			if w := m.currentWindow(); w != nil {
+				exec.Command("tmux", "set-window-option", "-u", "-t", w.ID, "@hometown_lane").Run()
+				m.refresh()
+			}
+			return m, nil
+		case CtrlKill:
+			if w := m.currentWindow(); w != nil {
+				m.modal = newConfirmModal(fmt.Sprintf("Kill window %q?", w.Name))
+				m.modalAction = ActionDelete
+			}
+			return m, nil
+		}
 	}
 
 	key := msg.String()
@@ -621,7 +617,7 @@ func findFallbackTarget(currentSessID string, all []Session) string {
 	return ""
 }
 
-func (m Model) handlePaste(before bool) (Model, tea.Cmd) {
+func (m Model) handlePaste() (Model, tea.Cmd) {
 	if m.cutWinID == "" {
 		return m, nil
 	}
@@ -632,16 +628,7 @@ func (m Model) handlePaste(before bool) (Model, tea.Cmd) {
 	tmuxRun("set-window-option", "-t", m.cutWinID, "@hometown_lane", storeIndex(laneKey))
 
 	if target != nil && target.ID != m.cutWinID {
-		if before {
-			// Two-step swap: insert cut after target, then insert target after cut.
-			// Step 1: [..., target, cut, ...]
-			tmuxRun("move-window", "-a", "-s", m.cutWinID, "-t", target.ID)
-			// Step 2: [..., cut, target, ...]
-			tmuxRun("move-window", "-a", "-s", target.ID, "-t", m.cutWinID)
-		} else {
-			// Move immediately after target.
-			tmuxRun("move-window", "-a", "-s", m.cutWinID, "-t", target.ID)
-		}
+		tmuxRun("move-window", "-a", "-s", m.cutWinID, "-t", target.ID)
 	}
 
 	pastedID := m.cutWinID
@@ -768,7 +755,7 @@ func (m Model) View() string {
 		bar = pad + dimStyle.Render(m.inputPrompt+": ") + string(m.inputValue) + cursorStyle.Render("█")
 	default:
 		actions := lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(
-			hintStyle.Render("[a]dd   [r]ename   [d]elete   [c]ut   [p]aste   re[m]ove"))
+			hintStyle.Render(resolvedHintBar))
 		if n := m.countUntracked(); n > 0 {
 			noun := "window"
 			if n > 1 {
