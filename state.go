@@ -283,7 +283,7 @@ func buildStateLines() []string {
 				sessName := sessNames[sessID]
 				var sessLabel string
 				if slot := sessSlots[sessID]; slot != "" {
-					slotStr := "  Slot " + func() string {
+					slotStr := "  slot=" + func() string {
 						if i := parseIndex(slot); i >= 0 {
 							return slotIndexDisplay(i)
 						}
