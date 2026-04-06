@@ -167,6 +167,21 @@ func tmuxRun(args ...string) error {
 	return exec.Command("tmux", args...).Run()
 }
 
+// tmuxRunShell executes a tmux command string that may contain "; "-separated
+// sub-commands (the same format used by confirm-before). Each sub-command is
+// split on whitespace and chained with tmux's \; separator.
+func tmuxRunShell(cmdStr string) error {
+	parts := strings.Split(cmdStr, "; ")
+	var argv []string
+	for i, part := range parts {
+		if i > 0 {
+			argv = append(argv, ";")
+		}
+		argv = append(argv, strings.Fields(part)...)
+	}
+	return exec.Command("tmux", argv...).Run()
+}
+
 // ── Global option helpers ─────────────────────────────────────────────────────
 
 func tmuxGetGlobalOption(name string) string {

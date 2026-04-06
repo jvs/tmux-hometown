@@ -68,12 +68,14 @@ func main() {
 		}
 
 	case "kill-window":
-		if err := cmdKillWindow(); err != nil {
+		skipConfirm := len(args) > 0 && args[0] == "-y"
+		if err := cmdKillWindow(skipConfirm); err != nil {
 			die("%v", err)
 		}
 
 	case "kill-session":
-		if err := cmdKillSession(); err != nil {
+		skipConfirm := len(args) > 0 && args[0] == "-y"
+		if err := cmdKillSession(skipConfirm); err != nil {
 			die("%v", err)
 		}
 
@@ -209,8 +211,8 @@ func printUsage() {
 				{"flip-window", "Toggle back to the previously active window in this session"},
 				{"flip-session", "Toggle back to the previously active session"},
 				{"new-window", "Create a new window in the current lane"},
-				{"kill-window", "Kill the current window (with confirmation)"},
-				{"kill-session", "Kill the current session (with confirmation)"},
+				{"kill-window", "Kill the current window (with confirmation; -y skips prompt)"},
+				{"kill-session", "Kill the current session (with confirmation; -y skips prompt)"},
 			},
 		},
 		{
@@ -567,7 +569,7 @@ func cmdNewWindow() error {
 	return nil
 }
 
-func cmdKillWindow() error {
+func cmdKillWindow(skipConfirm bool) error {
 	sessID, curWinID, err := getCurrentSessionAndWindow()
 	if err != nil {
 		return err
@@ -575,6 +577,9 @@ func cmdKillWindow() error {
 	currentLane := getCurrentLane()
 	windows, _ := loadWindows(sessID)
 	confirmCmd := buildKillWindowConfirmCmd(sessID, curWinID, currentLane, windows)
+	if skipConfirm {
+		return tmuxRunShell(confirmCmd)
+	}
 	return tmuxRun("confirm-before", "-p", " Kill window?", confirmCmd)
 }
 
@@ -608,7 +613,7 @@ func buildKillWindowConfirmCmd(sessID, curWinID string, currentLane int, windows
 	return fmt.Sprintf("switch-client -t %s; kill-window -t %s", fallbackTarget, curWinID)
 }
 
-func cmdKillSession() error {
+func cmdKillSession(skipConfirm bool) error {
 	sessID, _, err := getCurrentSessionAndWindow()
 	if err != nil {
 		return err
@@ -621,6 +626,9 @@ func cmdKillSession() error {
 	} else {
 		fallbackTarget := findFallbackTarget(sessID, all)
 		confirmCmd = fmt.Sprintf("switch-client -t %s; kill-session -t %s", fallbackTarget, sessID)
+	}
+	if skipConfirm {
+		return tmuxRunShell(confirmCmd)
 	}
 	return tmuxRun("confirm-before", "-p",
 		fmt.Sprintf(" Kill session %q?", sess.Name), confirmCmd)
